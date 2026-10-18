@@ -54,6 +54,22 @@ void main() {
     }
     expect(directions.length, 4);
   });
+  test('pizza stroke chooses the nearest orientation in both directions', () {
+    for (final line in [3, 1, 0, 2]) {
+      final (from, to) = assistedPizzaCut(line);
+      expect(nearestPizzaCut(from, to), line);
+      expect(nearestPizzaCut(to, from), line);
+      expect(nearestPizzaCut(from, to + const Offset(.015, -.01)), line);
+    }
+    expect(
+      nearestPizzaCut(const Offset(.45, .51), const Offset(.50, .51)),
+      isNull,
+    );
+    expect(
+      nearestPizzaCut(const Offset(.2, .25), const Offset(.8, .25)),
+      isNull,
+    );
+  });
   test('each cut advances along the remaining whole ingredient', () {
     for (final start in [0, 5]) {
       var previous = start == 0 ? -.82 : -.38;

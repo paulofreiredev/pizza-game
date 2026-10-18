@@ -21,12 +21,10 @@ class GameStorage {
       factory = databaseFactoryFfi;
     }
     factory ??= databaseFactory;
-    final location =
-        databasePath ??
-        path.join(
-          (await getApplicationSupportDirectory()).path,
-          'pizza_game.db',
-        );
+    final location = databasePath ?? await _databaseLocation(factory);
+    if (location != inMemoryDatabasePath) {
+      await Directory(path.dirname(location)).create(recursive: true);
+    }
     final db = await factory.openDatabase(
       location,
       options: OpenDatabaseOptions(
@@ -45,6 +43,24 @@ class GameStorage {
       ),
     );
     return GameStorage(db);
+  }
+
+  static Future<String> _databaseLocation(DatabaseFactory factory) async {
+    if (Platform.isAndroid) {
+      // Use SQLite's native directory without depending on path_provider/JNI.
+      final directory = await factory.getDatabasesPath();
+      final previous = path.join(
+        path.dirname(directory),
+        'files',
+        'pizza_game.db',
+      );
+      if (await File(previous).exists()) return previous;
+      return path.join(directory, 'pizza_game.db');
+    }
+    return path.join(
+      (await getApplicationSupportDirectory()).path,
+      'pizza_game.db',
+    );
   }
 
   Future<String?> load() async {

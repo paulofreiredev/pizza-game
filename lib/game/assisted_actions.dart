@@ -35,7 +35,7 @@ Offset assistedToppingPosition(
   return placed.last;
 }
 
-/// Each intention to cut finishes the next straight, centered diameter.
+/// A straight diameter at one of the four supported orientations.
 (Offset, Offset) assistedPizzaCut(int cut) {
   final direction =
       Offset(math.cos(cut * math.pi / 4), math.sin(cut * math.pi / 4)) * .295;
@@ -49,4 +49,19 @@ Offset assistedToppingPosition(
   final x =
       .5 + .31 * (onion ? -.38 + (part + 1) * .14 : -.82 + (part + 1) * .27);
   return (Offset(x, .51 - .31 * .4), Offset(x, .51 + .31 * .3));
+}
+
+/// Snap a completed stroke to its nearest diameter, independent of cut order.
+/// Short movements and strokes away from the pizza center are ignored.
+int? nearestPizzaCut(Offset from, Offset to) {
+  const center = Offset(.5, .51);
+  final delta = to - from;
+  if (delta.distance < .20) return null;
+  final projection =
+      (((center - from).dx * delta.dx + (center - from).dy * delta.dy) /
+              delta.distanceSquared)
+          .clamp(0.0, 1.0);
+  if ((from + delta * projection - center).distance > .09) return null;
+  final angle = math.atan2(delta.dy, delta.dx);
+  return (angle / (math.pi / 4)).round() % 4;
 }

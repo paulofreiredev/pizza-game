@@ -36,39 +36,39 @@ class PizzaRecipe {
       'morango',
       'confeitos',
     ]),
-    PizzaRecipe('frango', 'Frango', ['queijo', 'frango'], price: 19900),
+    PizzaRecipe('frango', 'Frango', ['queijo', 'frango'], price: 7990),
     PizzaRecipe('mista', 'Mista', [
       'queijo',
       'frango',
       'calabresa',
       'cebola',
-    ], price: 19900),
+    ], price: 7990),
     PizzaRecipe(
       'carne_de_sol',
       'Carne de sol com queijo',
       ['queijo', 'carne de sol'],
-      price: 39900,
+      price: 13990,
       reward: 4990,
     ),
     PizzaRecipe(
       'quatro_queijos',
       'Quatro queijos',
       ['muçarela', 'provolone', 'gorgonzola', 'parmesão'],
-      price: 39900,
+      price: 13990,
       reward: 4990,
     ),
     PizzaRecipe(
       'camarao',
       'Camarão',
       ['queijo', 'camarão'],
-      price: 39900,
+      price: 13990,
       reward: 4990,
     ),
     PizzaRecipe('frango_catupiri', 'Frango com catupiri', [
       'queijo',
       'frango',
       'catupiri',
-    ], price: 19900),
+    ], price: 7990),
   ];
 }
 
@@ -125,7 +125,19 @@ class GameState {
               ((!hasSession && _result == null) || r.id != recipe.id),
         )
         .toList();
-    final selected = candidates[_random.nextInt(candidates.length)];
+    var remaining = candidates
+        .where((r) => _remainingOrderFlavors.contains(r.id))
+        .toList();
+    if (remaining.isEmpty) {
+      _remainingOrderFlavors
+        ..clear()
+        ..addAll(
+          PizzaRecipe.recipes.where((r) => ownsRecipe(r.id)).map((r) => r.id),
+        );
+      remaining = candidates;
+    }
+    final selected = remaining[_random.nextInt(remaining.length)];
+    _remainingOrderFlavors.remove(selected.id);
     final templates = orders.where((o) => o.recipe.id == selected.id).toList();
     return templates[_random.nextInt(templates.length)].index;
   }
@@ -135,12 +147,12 @@ class GameState {
     Cosmetic('sage', 'Toalha sálvia', 6000),
     Cosmetic('rose', 'Toalha rosada', 9000),
     Cosmetic('sunset', 'Toalha dourada', 12000),
-    Cosmetic('salt_rose', 'Saleiro de cerâmica rosada', 7900, category: 'salt'),
-    Cosmetic('salt_gold', 'Saleiro dourado', 12900, category: 'salt'),
+    Cosmetic('salt_rose', 'Saleiro de cerâmica rosada', 3990, category: 'salt'),
+    Cosmetic('salt_gold', 'Saleiro dourado', 3990, category: 'salt'),
     Cosmetic('oven_rose', 'Forno rosado', 29900, category: 'oven'),
     Cosmetic('oven_copper', 'Forno de cobre', 39900, category: 'oven'),
-    Cosmetic('plant_fern', 'Samambaia', 9900, category: 'plant'),
-    Cosmetic('plant_flowers', 'Vaso de flores', 14900, category: 'plant'),
+    Cosmetic('plant_fern', 'Samambaia', 3990, category: 'plant'),
+    Cosmetic('plant_flowers', 'Vaso de flores', 3990, category: 'plant'),
   ];
   static final orders = List<PizzaOrder>.unmodifiable(
     List.generate(
@@ -189,6 +201,7 @@ class GameState {
   KitchenStage _stage = KitchenStage.ingredients;
   bool _freeMode = false, hasSession = false;
   final Set<String> _purchasedRecipes = {};
+  final Set<String> _remainingOrderFlavors = {};
   Set<String> get purchasedRecipes => Set.unmodifiable(_purchasedRecipes);
   bool ownsRecipe(String id) => PizzaRecipe.recipes.any(
     (r) => r.id == id && (r.price == 0 || _purchasedRecipes.contains(id)),
@@ -196,8 +209,14 @@ class GameState {
   bool buyRecipe(String id) {
     final recipe = PizzaRecipe.recipes.where((r) => r.id == id).firstOrNull;
     if (recipe == null || ownsRecipe(id) || _coins < recipe.price) return false;
+    if (_remainingOrderFlavors.isEmpty) {
+      _remainingOrderFlavors.addAll(
+        PizzaRecipe.recipes.where((r) => ownsRecipe(r.id)).map((r) => r.id),
+      );
+    }
     _coins -= recipe.price;
     _purchasedRecipes.add(id);
+    _remainingOrderFlavors.add(id);
     return true;
   }
 
@@ -412,6 +431,7 @@ class GameState {
   Map<String, dynamic> toJson() => {
     'moneyVersion': 2,
     'purchasedRecipes': _purchasedRecipes.toList(),
+    'remainingOrderFlavors': _remainingOrderFlavors.toList(),
     'coins': _coins,
     'bestStars': _bestStars.map((k, v) => MapEntry('$k', v)),
     'ownedCosmetics': _ownedCosmetics.toList(),
@@ -445,6 +465,12 @@ class GameState {
         purchased.whereType<String>().where(
           (id) => PizzaRecipe.recipes.any((r) => r.id == id && r.price > 0),
         ),
+      );
+    }
+    final remaining = json['remainingOrderFlavors'];
+    if (remaining is List) {
+      game._remainingOrderFlavors.addAll(
+        remaining.whereType<String>().where(game.ownsRecipe),
       );
     }
     final ratings = json['bestStars'];

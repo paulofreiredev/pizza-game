@@ -49,9 +49,11 @@ APKs: `build/app/outputs/flutter-apk/`. Executável Linux e bibliotecas: `build/
 
 1. Em uma instalação nova, confirme três receitas disponíveis e saldo zero.
 2. Entregue pedidos simples: cada um rende 29,29 moedas, creditadas uma única vez por preparo.
-3. Acumule moedas repetindo pedidos; compre frango ou mista por 199,00, ou uma receita especial por 399,00. Pedidos especiais rendem 49,90.
+3. Acumule moedas repetindo pedidos; compre frango ou mista por 79,90, ou uma receita especial por 139,90. Pedidos especiais rendem 49,90.
 4. Compre e equipe saleiro, forno, toalha e planta; confirme que aparecem juntos no cenário.
 5. Feche e reabra o jogo: saldo, compras, equipamentos e preparo devem continuar salvos.
-6. Segure e mova a ferramenta durante um corte; confira os potes cheios após a transferência e o limite das coberturas.
+6. Corte ingredientes e pizza por toque ou arraste. Na pizza, arraste em qualquer direção e ordem; ao soltar, a linha mais próxima fica marcada. Toques marcam a linha disponível mais próxima.
+7. Após comprar receitas, confira os pedidos: a rotação aleatória inclui todos os sabores desbloqueados antes de repetir e é preservada ao reabrir.
+8. Confira os potes cheios após a transferência e o limite das coberturas.
 
 O modo livre não concede moedas ou estrelas. Para verificar a migração, atualize uma instalação com o salvamento antigo: moedas inteiras são convertidas para centavos uma única vez, e o progresso é copiado para SQLite.

@@ -113,7 +113,7 @@ void main() {
     expect(game.startOrder(9, freeMode: true), isFalse);
     expect(game.buyRecipe('frango'), isFalse);
     expect(game.buyRecipe('unknown'), isFalse);
-    final funded = GameState.fromJson({'coins': 19900, 'moneyVersion': 2});
+    final funded = GameState.fromJson({'coins': 7990, 'moneyVersion': 2});
     expect(funded.buyRecipe('frango'), isTrue);
     expect(funded.coins, 0);
     expect(funded.buyRecipe('frango'), isFalse);
@@ -138,7 +138,7 @@ void main() {
       expect(restored.equippedFor('plant'), 'plant_fern');
       expect(restored.equipCosmetic('salt_default'), isTrue);
       expect(restored.equippedFor('oven'), 'oven_copper');
-      expect(restored.coins, 31300);
+      expect(restored.coins, 46120);
     },
   );
   test('toppings stop at a generous recipe-specific limit', () {
@@ -184,6 +184,37 @@ void main() {
       );
     },
   );
+  test('every purchased flavor is offered after buying and reopening', () {
+    for (final recipe in PizzaRecipe.recipes.where((r) => r.price > 0)) {
+      var game = GameState.fromJson({'coins': recipe.price, 'moneyVersion': 2});
+      expect(game.buyRecipe(recipe.id), isTrue);
+      game = GameState.fromJson(game.toJson());
+      final offered = List.generate(
+        4,
+        (_) => GameState.orders[game.nextOrderIndex].recipe.id,
+      );
+      expect(offered, contains(recipe.id));
+      expect(offered.toSet().length, 4);
+      for (final id in offered) {
+        expect(game.ownsRecipe(id), isTrue);
+      }
+    }
+  });
+  test('order rotation covers all owned recipes and survives reopening', () {
+    var game = GameState.fromJson({'coins': 200000, 'moneyVersion': 2});
+    for (final recipe in PizzaRecipe.recipes.where((r) => r.price > 0)) {
+      expect(game.buyRecipe(recipe.id), isTrue);
+    }
+    final offered = <String>{};
+    for (var i = 0; i < PizzaRecipe.recipes.length; i++) {
+      final index = game.nextOrderIndex;
+      expect(offered.add(GameState.orders[index].recipe.id), isTrue);
+      expect(game.startOrder(index), isTrue);
+      finishOrder(game);
+      game = GameState.fromJson(game.toJson());
+    }
+    expect(offered, PizzaRecipe.recipes.map((r) => r.id).toSet());
+  });
   test('mixing advances directly to rolling and legacy kneading resumes at rolling', () {
     final game = GameState.fromJson({
       'orderIndex': 0,

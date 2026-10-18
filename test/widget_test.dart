@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pizza_game/main.dart';
@@ -137,6 +138,163 @@ void prepareUntil(GameState game, KitchenStage target) {
 }
 
 void main() {
+  testWidgets('bought chicken appears in regular orders after reopening', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = MemoryStorage()
+      ..snapshot = jsonEncode({
+        'game': GameState.fromJson({'coins': 15000, 'moneyVersion': 2})
+            .toJson(),
+      });
+    await tester.pumpWidget(PizzaGameApp(storage: storage));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Minha cozinha ·'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Frango'), 200);
+    await tester.tap(find.text('Frango'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Comprar por 79,90 moedas'));
+    await tester.tap(find.text('Comprar por 79,90 moedas'));
+    await tester.pumpAndSettle();
+    expect(
+      (jsonDecode(storage.snapshot!)['game'] as Map)['purchasedRecipes'],
+      contains('frango'),
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.pumpWidget(PizzaGameApp(storage: storage));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Jogar'));
+    await tester.pumpAndSettle();
+    var found = false;
+    for (var i = 0; i < 4; i++) {
+      final dialog = tester.widget<RecipeIntroDialog>(
+        find.byType(RecipeIntroDialog),
+      );
+      if (dialog.recipe.id == 'frango') {
+        found = true;
+        break;
+      }
+      await tester.ensureVisible(find.byKey(const Key('recipe-intro-decline')));
+      await tester.tap(find.byKey(const Key('recipe-intro-decline')));
+      await tester.pumpAndSettle();
+    }
+    expect(found, isTrue);
+    await tester.tap(find.byKey(const Key('recipe-intro-start')));
+    await tester.pump(const Duration(milliseconds: 300));
+    final saved = GameState.fromJson(
+      jsonDecode(storage.snapshot!)['game'] as Map<String, dynamic>,
+    );
+    expect(saved.recipe.id, 'frango');
+    expect(saved.freeMode, isFalse);
+    expect(saved.coins, 7010);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+  testWidgets('tapping ingredients and pizza cuts without dragging', (
+    tester,
+  ) async {
+    final game = GameState()..startOrder(1, freeMode: true);
+    prepareUntil(game, KitchenStage.chop);
+    await tester.pumpWidget(KitchenHarness(game, SilentAudio()));
+    await tester.pump();
+    Offset center() {
+      final rect = tester.getRect(find.byKey(const Key('natural-board')));
+      return rect.topLeft + Offset(rect.width * .5, rect.height * .51);
+    }
+
+    await tester.tapAt(center());
+    await tester.pump();
+    expect(game.actions, 1);
+    await tester.tapAt(center());
+    await tester.pump();
+    expect(game.actions, 1);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.tapAt(center());
+    await tester.pump();
+    expect(game.actions, 2);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    final pizza = GameState()..startOrder(0, freeMode: true);
+    prepareUntil(pizza, KitchenStage.slice);
+    await tester.pumpWidget(KitchenHarness(pizza, SilentAudio()));
+    await tester.pump();
+    final rect = tester.getRect(find.byKey(const Key('natural-board')));
+    final u = math.min(rect.width, rect.height);
+    await tester.tapAt(center() + Offset(0, u * .2));
+    await tester.pump();
+    KitchenPainter painter() => tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((w) => w.painter)
+        .whereType<KitchenPainter>()
+        .single;
+    expect(painter().pizzaCutLines, {2});
+    await tester.tapAt(rect.topLeft + const Offset(8, 8));
+    await tester.pump();
+    expect(pizza.actions, 1);
+    for (var i = 2; i <= 4; i++) {
+      await tester.tapAt(center());
+      await tester.pump();
+      expect(pizza.actions, i);
+    }
+    expect(painter().pizzaCutLines, {0, 1, 2, 3});
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+  testWidgets(
+    'phone keeps SQLite saves and purchases when legacy preferences fail',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.resetStatic();
+      const channel = MethodChannel('plugins.flutter.io/shared_preferences');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async {
+            throw PlatformException(code: 'unavailable');
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+        SharedPreferences.setMockInitialValues({});
+      });
+      final storage = MemoryStorage();
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      expect(storage.snapshot, isNotNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      storage.snapshot = jsonEncode({
+        'game': GameState.fromJson({'coins': 15000, 'moneyVersion': 2})
+            .toJson(),
+      });
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Minha cozinha ·'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Saleiro dourado'), 250);
+      await tester.tap(find.text('Saleiro dourado'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Comprar por 39,90 moedas'));
+      await tester.tap(find.text('Comprar por 39,90 moedas'));
+      await tester.pumpAndSettle();
+      final restored = GameState.fromJson(
+        jsonDecode(storage.snapshot!)['game'] as Map<String, dynamic>,
+      );
+      expect(restored.coins, 11010);
+      expect(restored.equippedFor('salt'), 'salt_gold');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 11010);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
   testWidgets(
     'shop previews are free to inspect and purchases require confirmation',
     (tester) async {
@@ -147,7 +305,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       final storage = MemoryStorage()
         ..snapshot = jsonEncode({
-          'game': GameState.fromJson({'coins': 50000, 'moneyVersion': 2})
+          'game': GameState.fromJson({'coins': 15000, 'moneyVersion': 2})
               .toJson(),
         });
       await tester.pumpWidget(PizzaGameApp(storage: storage));
@@ -158,19 +316,19 @@ void main() {
       await tester.tap(find.text('Saleiro dourado'));
       await tester.pumpAndSettle();
       expect(find.byType(ShopPreviewDialog), findsOneWidget);
-      expect(find.text('Comprar por 129,00 moedas'), findsOneWidget);
-      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 50000);
+      expect(find.text('Comprar por 39,90 moedas'), findsOneWidget);
+      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 15000);
       await tester.tap(find.byTooltip('Fechar prévia'));
       await tester.pumpAndSettle();
-      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 50000);
+      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 15000);
       await tester.tap(find.text('Saleiro dourado'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Comprar por 129,00 moedas'));
+      await tester.tap(find.text('Comprar por 39,90 moedas'));
       await tester.pumpAndSettle();
       final saved = GameState.fromJson(
         jsonDecode(storage.snapshot!)['game'] as Map<String, dynamic>,
       );
-      expect(saved.coins, 37100);
+      expect(saved.coins, 11010);
       expect(saved.equippedFor('salt'), 'salt_gold');
       await tester.scrollUntilVisible(
         find.text('Carne de sol com queijo'),
@@ -179,14 +337,14 @@ void main() {
       await tester.tap(find.text('Carne de sol com queijo'));
       await tester.pumpAndSettle();
       expect(find.byType(ShopPreviewDialog), findsOneWidget);
-      expect(find.text('Faltam 28,00 moedas.'), findsOneWidget);
+      expect(find.text('Faltam 29,80 moedas.'), findsOneWidget);
       final buy = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, 'Comprar por 399,00 moedas'),
+        find.widgetWithText(FilledButton, 'Comprar por 139,90 moedas'),
       );
       expect(buy.onPressed, isNull);
       await tester.tap(find.byTooltip('Fechar prévia'));
       await tester.pumpAndSettle();
-      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 37100);
+      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 11010);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
@@ -424,7 +582,7 @@ void main() {
             Offset(math.cos(i * math.pi / 4), math.sin(i * math.pi / 4)) *
             r *
             .9;
-        await toolStroke([center() + d, center(), center() - d]);
+        await drag(center() + d, center() - d);
       }
       await tester.pump(const Duration(seconds: 1));
       expect(game.stage, KitchenStage.serve);
@@ -506,56 +664,51 @@ void main() {
       await tester.pump();
     },
   );
-  testWidgets('a crooked short gesture animates one clean straight cut', (
-    tester,
-  ) async {
-    final game = GameState()..startOrder(0, freeMode: true);
-    prepareUntil(game, KitchenStage.slice);
-    await tester.pumpWidget(KitchenHarness(game, SilentAudio()));
-    await tester.pump();
-    final rect = tester.getRect(find.byKey(const Key('natural-board'))),
-        u = math.min(
-          tester.getSize(find.byKey(const Key('natural-board'))).width,
-          tester.getSize(find.byKey(const Key('natural-board'))).height,
-        );
-    final center = rect.topLeft + Offset(rect.width * .5, rect.height * .51);
-    final gesture = await tester.startGesture(
-      center + Offset(-u * .1, u * .08),
-    );
-    await gesture.moveBy(const Offset(20, 10));
-    await tester.pump();
-    await gesture.moveBy(Offset(u * .15, -u * .12));
-    await tester.pump();
-    KitchenPainter currentPainter() => tester
-        .widgetList<CustomPaint>(find.byType(CustomPaint))
-        .map((w) => w.painter)
-        .whereType<KitchenPainter>()
-        .single;
-    final beforeMove = currentPainter().toolPosition!;
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(currentPainter().toolPosition, beforeMove);
-    await gesture.moveBy(Offset(-u * .1, u * .16));
-    await tester.pump();
-    final moved = currentPainter().toolPosition! - beforeMove;
-    expect(moved.dx, closeTo(-.1, .001));
-    expect(moved.dy, closeTo(.16, .001));
-    await gesture.up();
-    await tester.pump(const Duration(milliseconds: 250));
-    final painter = tester
-        .widgetList<CustomPaint>(find.byType(CustomPaint))
-        .map((w) => w.painter)
-        .whereType<KitchenPainter>()
-        .single;
-    expect(painter.cuttingTrail.length, 2);
-    expect(
-      painter.cuttingTrail.every((p) => (p.dy - .51).abs() < 1e-10),
-      isTrue,
-    );
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(game.actions, 1);
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump();
-  });
+  testWidgets(
+    'pizza cuts follow the pointer and snap in any order without duplicates',
+    (tester) async {
+      final game = GameState()..startOrder(0, freeMode: true);
+      prepareUntil(game, KitchenStage.slice);
+      await tester.pumpWidget(KitchenHarness(game, SilentAudio()));
+      await tester.pump();
+      final board = find.byKey(const Key('natural-board'));
+      final rect = tester.getRect(board);
+      final size = tester.getSize(board);
+      final u = math.min(size.width, size.height);
+      final center = rect.topLeft + Offset(size.width * .5, size.height * .51);
+      KitchenPainter currentPainter() => tester
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .map((w) => w.painter)
+          .whereType<KitchenPainter>()
+          .single;
+      final completed = <int>{};
+      for (final line in [3, 3, 1, 0, 2]) {
+        final angle = line * math.pi / 4;
+        final direction = Offset(math.cos(angle), math.sin(angle));
+        final gesture = await tester.startGesture(center - direction * u * .27);
+        await gesture.moveBy(direction * 22);
+        await tester.pump();
+        final before = currentPainter().toolPosition!;
+        await gesture.moveBy(direction * u * .1);
+        await tester.pump();
+        final after = currentPainter().toolPosition!;
+        expect((after - before - direction * .1).distance, lessThan(.001));
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(currentPainter().toolPosition, after);
+        expect(game.actions, completed.length);
+        await gesture.moveTo(center + direction * u * .27);
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+        completed.add(line);
+        expect(game.actions, completed.length);
+        expect(currentPainter().pizzaCutLines, completed);
+        expect(currentPainter().cuttingTrail, isEmpty);
+      }
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
   testWidgets(
     'recipe photo can be dismissed without starting a free-play session',
     (tester) async {

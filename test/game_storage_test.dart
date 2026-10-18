@@ -12,7 +12,7 @@ void main() {
     'SQLite reopens wallet, recipes and independently equipped scenery',
     () async {
       final directory = await Directory.systemTemp.createTemp('pizza-storage-');
-      final location = '${directory.path}/game.db';
+      final location = '${directory.path}/nested/data/game.db';
       var storage = await GameStorage.open(
         factory: databaseFactoryFfi,
         databasePath: location,
@@ -31,10 +31,10 @@ void main() {
           (jsonDecode((await storage.load())!) as Map<String, dynamic>)['game']
               as Map<String, dynamic>,
         );
-        expect(restored.coins, 72200);
+        expect(restored.coins, 88020);
         expect(restored.ownsRecipe('frango'), isTrue);
         expect(restored.equippedFor('salt'), 'salt_rose');
-        expect((await storage.database.query('wallet')).single['cents'], 72200);
+        expect((await storage.database.query('wallet')).single['cents'], 88020);
         expect(
           (await storage.database.query('purchased_recipes'))
               .single['recipe_id'],
@@ -45,10 +45,10 @@ void main() {
           storage.save(jsonEncode({'game': invalid})),
           throwsA(isA<DatabaseException>()),
         );
-        expect((await storage.database.query('wallet')).single['cents'], 72200);
+        expect((await storage.database.query('wallet')).single['cents'], 88020);
         final afterFailure =
             jsonDecode((await storage.load())!) as Map<String, dynamic>;
-        expect((afterFailure['game'] as Map)['coins'], 72200);
+        expect((afterFailure['game'] as Map)['coins'], 88020);
       } finally {
         await storage.close();
         await directory.delete(recursive: true);

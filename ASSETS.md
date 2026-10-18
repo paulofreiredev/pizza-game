@@ -26,3 +26,5 @@ Os arquivos originais foram preservados. `background.wav` é uma versão PCM est
 - Ícones Material fornecidos pelo Flutter.
 
 As licenças ainda não confirmadas devem ser verificadas antes de distribuir publicamente o jogo.
+
+- `assets/images/branding/calabresa-mark.png`: pizza isolada com transparência pela ferramenta integrada image_gen, baseada em `assets/images/recipes/calabresa.png`. Usada no carregamento Flutter e, em versões redimensionadas, no ícone Android e na splash nativa. Prompt em `docs/branding-art-prompt.txt`; variantes geradas por `tools/resize_android_branding.py`.

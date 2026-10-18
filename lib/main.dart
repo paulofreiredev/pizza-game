@@ -84,8 +84,15 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
   Future<void> _load() async {
     try {
       storage = widget.storage ?? await GameStorage.open();
-      final legacy = await SharedPreferences.getInstance();
-      final raw = await storage!.load() ?? legacy.getString('pizza_game_v1');
+      var raw = await storage!.load();
+      if (raw == null) {
+        try {
+          final legacy = await SharedPreferences.getInstance();
+          raw = legacy.getString('pizza_game_v1');
+        } catch (_) {
+          // Legacy preferences must not disable SQLite or new purchases.
+        }
+      }
       if (raw != null) {
         final data = jsonDecode(raw) as Map<String, dynamic>;
         game = GameState.fromJson(
@@ -270,7 +277,30 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
     },
     child: Scaffold(
       body: !ready
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/images/branding/calabresa-mark.png',
+                    width: 180,
+                    height: 180,
+                    semanticLabel: 'Pizza de calabresa',
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Pizza Game',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 24),
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ),
+            )
           : SafeArea(
               child: Column(
                 children: [

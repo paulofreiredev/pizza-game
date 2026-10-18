@@ -26,6 +26,7 @@ class KitchenPainter extends CustomPainter {
     this.ovenOpen = true,
     this.ovenDoorProgress,
     this.cuttingTrail = const [],
+    this.pizzaCutLines = const {},
     this.ovenActions = 0,
     this.cutAnimation = 1,
     this.cutCount = -1,
@@ -50,6 +51,7 @@ class KitchenPainter extends CustomPainter {
   final double cutAnimation;
   final double? ovenDoorProgress;
   final List<Offset> cuttingTrail;
+  final Set<int> pizzaCutLines;
   final List<Offset> toppings, saucePoints;
   final List<String> toppingKinds;
 
@@ -1030,8 +1032,8 @@ class KitchenPainter extends CustomPainter {
       c.restore();
     }
     if (stage == 'slice' || stage == 'serve' || stage == 'complete') {
-      final lines = stage == 'slice' ? (progress * 4).floor() : 4;
-      for (var i = 0; i < lines; i++) {
+      final lines = stage == 'slice' ? pizzaCutLines : const {0, 1, 2, 3};
+      for (final i in lines) {
         final a = i * math.pi / 4;
         final delta = Offset(math.cos(a), math.sin(a)) * r * .96;
         c.drawLine(

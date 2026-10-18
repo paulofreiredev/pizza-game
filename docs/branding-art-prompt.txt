@@ -1,0 +1,6 @@
+Built-in image_gen; input: assets/images/recipes/calabresa.png
+Output master: assets/images/branding/calabresa-mark.png
+
+Use case: background-extraction. Asset type: shared master pizza image for Android launcher icon and launch splash screen of Pizza Game. Input image: reference and edit target calabresa.png. Isolate the complete round calabresa pizza, preserve its realistic golden crust, melted cheese, sausage slices and purple onion rings. Perfectly centered overhead circular pizza, fully visible with a small transparent margin around it. Remove the plate, table, cloth and plant entirely. Transparent background, no typography, no logo, no surrounding objects. Crisp appetizing food photography, preserve appearance of reference pizza. Output square.
+
+Android variants are resized from this master using tools/resize_android_branding.py (Python + Pillow).

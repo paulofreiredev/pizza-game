@@ -71,10 +71,9 @@ class _NaturalKitchenState extends State<NaturalKitchen>
   late final AnimationController doorMotion, transferMotion, boxMotion;
   Offset? flightFrom, flightTo, lastSprinkle;
   VoidCallback? afterFlight;
-  bool flightOut = false, crossedCenter = false;
+  bool flightOut = false;
   final List<Offset> cuttingTrail = [];
   int sprinkled = 0;
-  Offset? strokeOrigin;
   Offset? guidedFrom, guidedTo;
   KitchenStage? guidedStage;
   bool cutThisGesture = false;
@@ -180,20 +179,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
             duration: const Duration(milliseconds: 550),
             value: 1,
           )
-          ..addListener(() {
-            if (guidedFrom != null && guidedTo != null) {
-              final cutPoint = Offset.lerp(
-                guidedFrom!,
-                guidedTo!,
-                Curves.easeInOut.transform(cutMotion.value),
-              );
-              if (guidedStage == KitchenStage.slice) {
-                cuttingTrail.clear();
-                cuttingTrail.addAll([guidedFrom!, cutPoint!]);
-              }
-            }
-            if (mounted) setState(() {});
-          })
+          ..addListener(_frame)
           ..addStatusListener((status) {
             if (status == AnimationStatus.completed && guidedStage != null) {
               final stage = guidedStage;
@@ -201,10 +187,6 @@ class _NaturalKitchenState extends State<NaturalKitchen>
               guidedFrom = null;
               guidedTo = null;
               if (mounted && game.stage == stage) {
-                if (stage == KitchenStage.slice) {
-                  widget.cutLines.add(game.actions);
-                  game.performAction();
-                }
                 _changed();
               }
             }
@@ -259,7 +241,6 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     if (observed != game.stage) {
       observed = game.stage;
       cuttingTrail.clear();
-      crossedCenter = false;
       if (game.stage == KitchenStage.serve) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) boxMotion.forward(from: 0);
@@ -430,14 +411,12 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     }
     lastAction = DateTime.now();
     previous = p;
-    strokeOrigin = p;
     pointer = p;
     distance = 0;
     gestureEnded = false;
     dragging = null;
     lastSprinkle = null;
     sprinkled = 0;
-    crossedCenter = false;
     cutThisGesture = false;
     cuttingTrail.clear();
     for (var i = 0; i < pots.length; i++) {
@@ -464,7 +443,12 @@ class _NaturalKitchenState extends State<NaturalKitchen>
               ([KitchenStage.slice, KitchenStage.chop].contains(game.stage) &&
                   _inside(p, 1.3))) {
             dragging = 'tool';
-            tool = _normal(toolPoint);
+            tool = _normal(
+              game.stage == KitchenStage.slice && _inside(p, 1.3)
+                  ? p
+                  : toolPoint,
+            );
+            if (game.stage == KitchenStage.slice) cuttingTrail.add(tool!);
           }
         case KitchenStage.toppings:
           if (_inside(p) && game.toppingCounts.isNotEmpty) {
@@ -504,7 +488,12 @@ class _NaturalKitchenState extends State<NaturalKitchen>
         );
       }
       final tip = dragging == 'dough' ? p : toolPoint;
-      if ([KitchenStage.slice, KitchenStage.chop].contains(game.stage)) {
+      if (game.stage == KitchenStage.slice) {
+        cuttingTrail.add(_normal(tip));
+        _changed();
+        return;
+      }
+      if (game.stage == KitchenStage.chop) {
         distance += delta.distance;
         if (!cutThisGesture &&
             !cutMotion.isAnimating &&
@@ -512,37 +501,10 @@ class _NaturalKitchenState extends State<NaturalKitchen>
             (_inside(p, 1.5) || _inside(toolPoint, 1.5)) &&
             !game.canAdvance) {
           cutThisGesture = true;
-          guidedStage = game.stage;
-          if (game.stage == KitchenStage.slice) {
-            cutMotion.duration = const Duration(milliseconds: 550);
-            final guide = assistedPizzaCut(game.actions);
-            guidedFrom = guide.$1;
-            guidedTo = guide.$2;
-          } else {
-            final guide = assistedIngredientCut(game.actions);
-            guidedFrom = guide.$1;
-            guidedTo = guide.$2;
-            cutMotion.duration = Duration(
-              milliseconds: (game.actions + 1) % 5 == 0 ? 1100 : 550,
-            );
-            widget.cutLines.add(game.actions);
-            game.performAction();
-          }
-          if ((tool! - guidedTo!).distance < (tool! - guidedFrom!).distance) {
-            final start = guidedFrom;
-            guidedFrom = guidedTo;
-            guidedTo = start;
-          }
-          widget.audio.cut();
-          cutMotion.forward(from: 0);
+          _cutIngredient();
         }
         _changed();
         return;
-      }
-      if (game.stage == KitchenStage.slice &&
-          !crossedCenter &&
-          (tip - center).distance >= r * .75) {
-        strokeOrigin = tip;
       }
       if (_inside(tip, 1.05)) {
         distance += delta.distance;
@@ -581,6 +543,16 @@ class _NaturalKitchenState extends State<NaturalKitchen>
 
   void _end() {
     final p = pointer, kind = dragging;
+    if (game.stage == KitchenStage.slice && kind == 'tool') {
+      final line = cuttingTrail.length < 2
+          ? null
+          : nearestPizzaCut(cuttingTrail.first, cuttingTrail.last);
+      cuttingTrail.clear();
+      if (line != null && !game.canAdvance && widget.cutLines.add(line)) {
+        game.performAction();
+        widget.audio.cut();
+      }
+    }
     gestureEnded = true;
     dragging = null;
     pointer = null;
@@ -631,6 +603,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
   }
 
   void _cancel() {
+    cuttingTrail.clear();
     gestureEnded = true;
     dragging = null;
     pointer = null;
@@ -639,7 +612,58 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     _changed();
   }
 
+  void _cutIngredient() {
+    if (cutMotion.isAnimating || game.canAdvance) return;
+    guidedStage = game.stage;
+    final guide = assistedIngredientCut(game.actions);
+    guidedFrom = guide.$1;
+    guidedTo = guide.$2;
+    cutMotion.duration = Duration(
+      milliseconds: (game.actions + 1) % 5 == 0 ? 1100 : 550,
+    );
+    widget.cutLines.add(game.actions);
+    game.performAction();
+    if (tool != null &&
+        (tool! - guidedTo!).distance < (tool! - guidedFrom!).distance) {
+      final start = guidedFrom;
+      guidedFrom = guidedTo;
+      guidedTo = start;
+    }
+    widget.audio.cut();
+    cutMotion.forward(from: 0);
+  }
+
   void _tap(Offset p) {
+    if (!widget.active || transition != null) return;
+    if (game.stage == KitchenStage.chop && _inside(p, 1.05)) {
+      tool = _normal(p);
+      _cutIngredient();
+      _changed();
+      return;
+    }
+    if (game.stage == KitchenStage.slice && _inside(p, 1.05)) {
+      if (game.canAdvance) return;
+      final available = [
+        0,
+        1,
+        2,
+        3,
+      ].where((line) => !widget.cutLines.contains(line)).toList();
+      if (available.isEmpty) return;
+      final point = _normal(p) - const Offset(.5, .51);
+      double distanceToLine(int line) {
+        final angle = line * math.pi / 4;
+        return (point.dx * math.sin(angle) - point.dy * math.cos(angle)).abs();
+      }
+
+      available.sort((a, b) => distanceToLine(a).compareTo(distanceToLine(b)));
+      tool = _normal(p);
+      widget.cutLines.add(available.first);
+      game.performAction();
+      widget.audio.cut();
+      _changed();
+      return;
+    }
     if (!widget.active ||
         game.stage != KitchenStage.oven ||
         doorMotion.isAnimating ||
@@ -739,7 +763,10 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                             ovenOpen: ovenOpen,
                             ovenActions: game.actions,
                             ovenDoorProgress: doorMotion.value,
-                            cuttingTrail: cuttingTrail,
+                            cuttingTrail: List.of(cuttingTrail),
+                            pizzaCutLines: game.stage == KitchenStage.slice
+                                ? Set.of(widget.cutLines)
+                                : const {0, 1, 2, 3},
                             boardOnly:
                                 game.stage == KitchenStage.serve ||
                                 game.stage == KitchenStage.complete,
