@@ -23,6 +23,24 @@ void main() {
       expect(points.toSet().length, 20);
     }
   });
+  test(
+    'sausage portions have clearance and vary their distance from center',
+    () {
+      final points = List.generate(8, (i) => assistedToppingPosition(i, 1));
+      for (var i = 0; i < points.length; i++) {
+        for (var j = i + 1; j < points.length; j++) {
+          expect((points[i] - points[j]).distance, greaterThan(.085));
+        }
+      }
+      expect(
+        points
+            .map((p) => ((p - const Offset(.5, .51)).distance * 100).round())
+            .toSet()
+            .length,
+        greaterThan(3),
+      );
+    },
+  );
   test('all assisted cuts are straight diameters through center', () {
     final directions = <Offset>{};
     for (var i = 0; i < 4; i++) {

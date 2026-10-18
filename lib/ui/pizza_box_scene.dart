@@ -1,3 +1,7 @@
+import 'dart:ui' as ui;
+
+import 'ready_pizza_photo.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -8,20 +12,31 @@ class PizzaBoxScene extends StatelessWidget {
     super.key,
     required this.progress,
     required this.recipeId,
+    this.readyPizzaImage,
   });
 
   final double progress;
   final String recipeId;
+  final ui.Image? readyPizzaImage;
 
   @override
   Widget build(BuildContext context) => CustomPaint(
-    painter: _BoxPainter(progress: progress, sweet: recipeId == 'chocolate'),
+    painter: _BoxPainter(
+      progress: progress,
+      sweet: recipeId == 'chocolate',
+      readyPizzaImage: readyPizzaImage,
+    ),
     size: Size.infinite,
   );
 }
 
 class _BoxPainter extends CustomPainter {
-  const _BoxPainter({required this.progress, required this.sweet});
+  const _BoxPainter({
+    required this.progress,
+    required this.sweet,
+    this.readyPizzaImage,
+  });
+  final ui.Image? readyPizzaImage;
   final double progress;
   final bool sweet;
 
@@ -167,56 +182,67 @@ class _BoxPainter extends CustomPainter {
         const Rect.fromLTWH(-.19, -.155, .38, .32).shift(const Offset(0, .013)),
         const Color(0x326E3F24),
       );
-      oval(const Rect.fromLTWH(-.19, -.16, .38, .32), const Color(0xFFC98A42));
-      oval(
-        const Rect.fromLTWH(-.174, -.145, .348, .29),
-        const Color(0xFFF3C474),
-      );
-      oval(
-        const Rect.fromLTWH(-.152, -.128, .304, .256),
-        sweet ? const Color(0xFF693C2C) : const Color(0xFFDC7651),
-      );
-      for (var i = 0; i < 7; i++) {
-        final a = i * 2.399;
-        final p = Offset(math.cos(a) * .09, math.sin(a) * .075);
-        if (sweet) {
-          final berry = Path()
-            ..moveTo(p.dx, p.dy + .028)
-            ..cubicTo(
-              p.dx - .05,
-              p.dy - .01,
-              p.dx - .024,
-              p.dy - .04,
-              p.dx,
-              p.dy - .019,
-            )
-            ..cubicTo(
-              p.dx + .027,
-              p.dy - .04,
-              p.dx + .046,
-              p.dy - .005,
-              p.dx,
-              p.dy + .028,
+      if (readyPizzaImage != null) {
+        paintReadyPizza(
+          canvas,
+          readyPizzaImage!,
+          const Rect.fromLTWH(-.19, -.16, .38, .32),
+        );
+      } else {
+        oval(
+          const Rect.fromLTWH(-.19, -.16, .38, .32),
+          const Color(0xFFC98A42),
+        );
+        oval(
+          const Rect.fromLTWH(-.174, -.145, .348, .29),
+          const Color(0xFFF3C474),
+        );
+        oval(
+          const Rect.fromLTWH(-.152, -.128, .304, .256),
+          sweet ? const Color(0xFF693C2C) : const Color(0xFFDC7651),
+        );
+        for (var i = 0; i < 7; i++) {
+          final a = i * 2.399;
+          final p = Offset(math.cos(a) * .09, math.sin(a) * .075);
+          if (sweet) {
+            final berry = Path()
+              ..moveTo(p.dx, p.dy + .028)
+              ..cubicTo(
+                p.dx - .05,
+                p.dy - .01,
+                p.dx - .024,
+                p.dy - .04,
+                p.dx,
+                p.dy - .019,
+              )
+              ..cubicTo(
+                p.dx + .027,
+                p.dy - .04,
+                p.dx + .046,
+                p.dy - .005,
+                p.dx,
+                p.dy + .028,
+              );
+            canvas.drawPath(berry, ink(const Color(0xFFE95E57)));
+            line(
+              p + const Offset(-.01, -.021),
+              p + const Offset(.01, -.021),
+              const Color(0xFF6E9251),
+              .009,
             );
-          canvas.drawPath(berry, ink(const Color(0xFFE95E57)));
-          line(
-            p + const Offset(-.01, -.021),
-            p + const Offset(.01, -.021),
-            const Color(0xFF6E9251),
-            .009,
-          );
-        } else {
-          oval(
-            Rect.fromCenter(center: p, width: .051, height: .041),
-            const Color(0xFF9F4E38),
-          );
-          oval(
-            Rect.fromCircle(
-              center: p + const Offset(.009, -.007),
-              radius: .006,
-            ),
-            const Color(0xFFFFDCAD),
-          );
+          } else {
+            oval(
+              Rect.fromCenter(center: p, width: .051, height: .041),
+              const Color(0xFF9F4E38),
+            );
+            oval(
+              Rect.fromCircle(
+                center: p + const Offset(.009, -.007),
+                radius: .006,
+              ),
+              const Color(0xFFFFDCAD),
+            );
+          }
         }
       }
       for (var i = 0; i < 4; i++) {
@@ -295,5 +321,7 @@ class _BoxPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _BoxPainter oldDelegate) =>
-      progress != oldDelegate.progress || sweet != oldDelegate.sweet;
+      progress != oldDelegate.progress ||
+      sweet != oldDelegate.sweet ||
+      readyPizzaImage != oldDelegate.readyPizzaImage;
 }

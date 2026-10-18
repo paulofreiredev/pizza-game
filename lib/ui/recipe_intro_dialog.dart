@@ -4,8 +4,15 @@ import 'package:flutter/material.dart';
 
 import '../game/game_state.dart';
 
+enum RecipeIntroAction { start, decline }
+
 class RecipeIntroDialog extends StatelessWidget {
-  const RecipeIntroDialog({super.key, required this.recipe});
+  const RecipeIntroDialog({
+    super.key,
+    required this.recipe,
+    this.allowDecline = false,
+  });
+  final bool allowDecline;
   final PizzaRecipe recipe;
 
   @override
@@ -28,7 +35,7 @@ class RecipeIntroDialog extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: IconButton(
                   tooltip: 'Escolher outra pizza',
-                  onPressed: () => Navigator.pop(context, false),
+                  onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close_rounded),
                 ),
               ),
@@ -67,7 +74,8 @@ class RecipeIntroDialog extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(48, 60),
                   ),
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () =>
+                      Navigator.pop(context, RecipeIntroAction.start),
                   icon: const Icon(Icons.play_arrow_rounded, size: 36),
                   label: const Text(
                     'Vamos preparar!',
@@ -75,6 +83,19 @@ class RecipeIntroDialog extends StatelessWidget {
                   ),
                 ),
               ),
+              if (allowDecline) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    key: const Key('recipe-intro-decline'),
+                    onPressed: () =>
+                        Navigator.pop(context, RecipeIntroAction.decline),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Recusar pedido'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

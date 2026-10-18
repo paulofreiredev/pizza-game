@@ -1,3 +1,8 @@
+import 'dart:math' as math;
+
+String formatCoins(int cents) =>
+    '${cents ~/ 100},${(cents % 100).toString().padLeft(2, '0')}';
+
 enum KitchenStage {
   ingredients,
   mix,
@@ -13,7 +18,14 @@ enum KitchenStage {
 }
 
 class PizzaRecipe {
-  const PizzaRecipe(this.id, this.name, this.toppings);
+  const PizzaRecipe(
+    this.id,
+    this.name,
+    this.toppings, {
+    this.price = 0,
+    this.reward = 2929,
+  });
+  final int price, reward;
   final String id, name;
   final List<String> toppings;
   static const recipes = [
@@ -24,6 +36,39 @@ class PizzaRecipe {
       'morango',
       'confeitos',
     ]),
+    PizzaRecipe('frango', 'Frango', ['queijo', 'frango'], price: 19900),
+    PizzaRecipe('mista', 'Mista', [
+      'queijo',
+      'frango',
+      'calabresa',
+      'cebola',
+    ], price: 19900),
+    PizzaRecipe(
+      'carne_de_sol',
+      'Carne de sol com queijo',
+      ['queijo', 'carne de sol'],
+      price: 39900,
+      reward: 4990,
+    ),
+    PizzaRecipe(
+      'quatro_queijos',
+      'Quatro queijos',
+      ['muçarela', 'provolone', 'gorgonzola', 'parmesão'],
+      price: 39900,
+      reward: 4990,
+    ),
+    PizzaRecipe(
+      'camarao',
+      'Camarão',
+      ['queijo', 'camarão'],
+      price: 39900,
+      reward: 4990,
+    ),
+    PizzaRecipe('frango_catupiri', 'Frango com catupiri', [
+      'queijo',
+      'frango',
+      'catupiri',
+    ], price: 19900),
   ];
 }
 
@@ -40,12 +85,21 @@ class PizzaOrder {
         (index == 7 && ingredient == 'cebola')) {
       return 1;
     }
-    return 3;
+    return switch (ingredient) {
+      'calabresa' => 18,
+      'camarão' => 12,
+      'catupiri' => 8,
+      'morango' || 'tomate' => 8,
+      'cebola' || 'manjericão' => 6,
+      'confeitos' => 12,
+      _ => 10,
+    };
   }
 }
 
 class Cosmetic {
-  const Cosmetic(this.id, this.name, this.price);
+  const Cosmetic(this.id, this.name, this.price, {this.category = 'cloth'});
+  final String category;
   final String id, name;
   final int price;
 }
@@ -58,19 +112,42 @@ class OrderResult {
 
 /// All gameplay rules are independent of rendering and audio.
 class GameState {
-  GameState();
+  GameState({math.Random? random}) : _random = random ?? math.Random();
+  final math.Random _random;
+  int get nextOrderIndex => randomOrderIndex();
+
+  int randomOrderIndex({String? excludingFlavor}) {
+    final candidates = PizzaRecipe.recipes
+        .where(
+          (r) =>
+              ownsRecipe(r.id) &&
+              r.id != excludingFlavor &&
+              ((!hasSession && _result == null) || r.id != recipe.id),
+        )
+        .toList();
+    final selected = candidates[_random.nextInt(candidates.length)];
+    final templates = orders.where((o) => o.recipe.id == selected.id).toList();
+    return templates[_random.nextInt(templates.length)].index;
+  }
+
   static const doughIngredients = ['farinha', 'água', 'fermento', 'sal'];
   static const cosmetics = [
-    Cosmetic('sage', 'Toalha sálvia', 60),
-    Cosmetic('rose', 'Toalha rosada', 90),
-    Cosmetic('sunset', 'Toalha dourada', 120),
+    Cosmetic('sage', 'Toalha sálvia', 6000),
+    Cosmetic('rose', 'Toalha rosada', 9000),
+    Cosmetic('sunset', 'Toalha dourada', 12000),
+    Cosmetic('salt_rose', 'Saleiro de cerâmica rosada', 7900, category: 'salt'),
+    Cosmetic('salt_gold', 'Saleiro dourado', 12900, category: 'salt'),
+    Cosmetic('oven_rose', 'Forno rosado', 29900, category: 'oven'),
+    Cosmetic('oven_copper', 'Forno de cobre', 39900, category: 'oven'),
+    Cosmetic('plant_fern', 'Samambaia', 9900, category: 'plant'),
+    Cosmetic('plant_flowers', 'Vaso de flores', 14900, category: 'plant'),
   ];
   static final orders = List<PizzaOrder>.unmodifiable(
     List.generate(
-      9,
+      PizzaRecipe.recipes.length + 6,
       (i) => PizzaOrder(
         i,
-        PizzaRecipe.recipes[i % 3],
+        PizzaRecipe.recipes[i < 9 ? i % 3 : i - 6],
         const [
           'Luna',
           'Theo',
@@ -81,6 +158,12 @@ class GameState {
           'Lia',
           'Otto',
           'Mia',
+          'Alice',
+          'Davi',
+          'Sofia',
+          'Miguel',
+          'Iara',
+          'Caio',
         ][i],
         const [
           'Uma marguerita bem gostosa!',
@@ -92,6 +175,12 @@ class GameState {
           'Espalhe a cobertura por toda a pizza.',
           'Pouca cebola e calabresa bem distribuída.',
           'Morangos bem distribuídos e confeitos!',
+          'Uma pizza de frango bem gostosa!',
+          'Frango e calabresa juntos, por favor!',
+          'Carne de sol com bastante queijo!',
+          'Quero provar os quatro queijos!',
+          'Uma pizza de camarão bem caprichada!',
+          'Frango com catupiri cremoso, por favor!',
         ][i],
       ),
     ),
@@ -99,10 +188,36 @@ class GameState {
   int _orderIndex = 0, _coins = 0, _actions = 0;
   KitchenStage _stage = KitchenStage.ingredients;
   bool _freeMode = false, hasSession = false;
+  final Set<String> _purchasedRecipes = {};
+  Set<String> get purchasedRecipes => Set.unmodifiable(_purchasedRecipes);
+  bool ownsRecipe(String id) => PizzaRecipe.recipes.any(
+    (r) => r.id == id && (r.price == 0 || _purchasedRecipes.contains(id)),
+  );
+  bool buyRecipe(String id) {
+    final recipe = PizzaRecipe.recipes.where((r) => r.id == id).firstOrNull;
+    if (recipe == null || ownsRecipe(id) || _coins < recipe.price) return false;
+    _coins -= recipe.price;
+    _purchasedRecipes.add(id);
+    return true;
+  }
+
   final Set<String> _selected = {};
   final Map<String, int> _toppings = {};
   final Map<int, int> _bestStars = {};
-  final Set<String> _ownedCosmetics = {'cream'};
+  final Set<String> _ownedCosmetics = {
+    'cream',
+    'salt_default',
+    'oven_default',
+    'plant_default',
+  };
+  final Map<String, String> _equipment = {
+    'salt': 'salt_default',
+    'oven': 'oven_default',
+    'plant': 'plant_default',
+  };
+  String equippedFor(String category) =>
+      category == 'cloth' ? _activeCosmetic : _equipment[category] ?? '';
+  bool isEquipped(Cosmetic item) => equippedFor(item.category) == item.id;
   String _activeCosmetic = 'cream';
   OrderResult? _result;
   double distribution = 0;
@@ -115,14 +230,6 @@ class GameState {
   int get actions => _actions;
   bool get freeMode => _freeMode;
   int get stars => _bestStars.values.fold(0, (a, b) => a + b);
-  int get unlockedOrders {
-    var unlocked = 1;
-    while (unlocked < orders.length && _bestStars.containsKey(unlocked - 1)) {
-      unlocked++;
-    }
-    return unlocked;
-  }
-
   Set<String> get selectedIngredients => Set.unmodifiable(_selected);
   Map<String, int> get toppingCounts => Map.unmodifiable(_toppings);
   Set<String> get ownedCosmetics => Set.unmodifiable(_ownedCosmetics);
@@ -130,7 +237,6 @@ class GameState {
   OrderResult? get result => _result;
   int starsForOrder(int index) => _bestStars[index] ?? 0;
   bool get isComplete => _stage == KitchenStage.complete;
-  bool get campaignComplete => _bestStars.length == orders.length;
   List<String> get requiredIngredients => switch (_stage) {
     KitchenStage.ingredients => doughIngredients,
     KitchenStage.toppings => recipe.toppings,
@@ -179,7 +285,7 @@ class GameState {
   bool startOrder(int index, {bool freeMode = false}) {
     if (index < 0 ||
         index >= orders.length ||
-        (!freeMode && index >= unlockedOrders)) {
+        !ownsRecipe(orders[index].recipe.id)) {
       return false;
     }
     _orderIndex = index;
@@ -197,7 +303,7 @@ class GameState {
   bool selectIngredient(String ingredient) {
     if (!requiredIngredients.contains(ingredient)) return false;
     if (_stage == KitchenStage.toppings) {
-      if ((_toppings[ingredient] ?? 0) >= 20 ||
+      if ((_toppings[ingredient] ?? 0) >= order.targetFor(ingredient) ||
           _toppings.values.fold(0, (a, b) => a + b) >= 80) {
         return false;
       }
@@ -232,7 +338,8 @@ class GameState {
       return true;
     }
     _stage = KitchenStage.values[_stage.index + 1];
-    if (_stage == KitchenStage.chop && recipe.id != 'calabresa') {
+    if (_stage == KitchenStage.knead) _stage = KitchenStage.roll;
+    if (_stage == KitchenStage.chop && !recipe.toppings.contains('calabresa')) {
       _stage = KitchenStage.sauce;
     }
     _selected.clear();
@@ -252,7 +359,7 @@ class GameState {
         : 1 +
               (matched == recipe.toppings.length ? 1 : 0) +
               (distribution >= .6 ? 1 : 0);
-    final reward = _freeMode ? 0 : 20 + earnedStars * 10;
+    final reward = _freeMode ? 0 : recipe.reward;
     _coins += reward;
     if (!_freeMode && earnedStars > (_bestStars[_orderIndex] ?? 0)) {
       _bestStars[_orderIndex] = earnedStars;
@@ -270,9 +377,8 @@ class GameState {
     return _result;
   }
 
-  bool nextOrder() => isComplete && _orderIndex + 1 < orders.length
-      ? startOrder(_orderIndex + 1, freeMode: _freeMode)
-      : false;
+  bool nextOrder() =>
+      isComplete && startOrder(nextOrderIndex, freeMode: _freeMode);
   bool buyCosmetic(String id) {
     final matches = cosmetics.where((item) => item.id == id);
     if (matches.isEmpty || _ownedCosmetics.contains(id)) return false;
@@ -280,21 +386,37 @@ class GameState {
     if (_coins < item.price) return false;
     _coins -= item.price;
     _ownedCosmetics.add(id);
-    _activeCosmetic = id;
+    equipCosmetic(id);
     return true;
   }
 
   bool equipCosmetic(String id) {
     if (!_ownedCosmetics.contains(id)) return false;
-    _activeCosmetic = id;
+    final category =
+        cosmetics.where((c) => c.id == id).firstOrNull?.category ??
+        (id.startsWith('salt_')
+            ? 'salt'
+            : id.startsWith('oven_')
+            ? 'oven'
+            : id.startsWith('plant_')
+            ? 'plant'
+            : 'cloth');
+    if (category == 'cloth') {
+      _activeCosmetic = id;
+    } else {
+      _equipment[category] = id;
+    }
     return true;
   }
 
   Map<String, dynamic> toJson() => {
+    'moneyVersion': 2,
+    'purchasedRecipes': _purchasedRecipes.toList(),
     'coins': _coins,
     'bestStars': _bestStars.map((k, v) => MapEntry('$k', v)),
     'ownedCosmetics': _ownedCosmetics.toList(),
     'activeCosmetic': _activeCosmetic,
+    'equipment': Map<String, String>.from(_equipment),
     'orderIndex': _orderIndex,
     'freeMode': _freeMode,
     'stage': _stage.name,
@@ -314,7 +436,17 @@ class GameState {
   factory GameState.fromJson(Map<String, dynamic> json) {
     final game = GameState();
     final coins = json['coins'];
-    if (coins is int && coins >= 0) game._coins = coins;
+    if (coins is int && coins >= 0) {
+      game._coins = coins * (json['moneyVersion'] == 2 ? 1 : 100);
+    }
+    final purchased = json['purchasedRecipes'];
+    if (purchased is List) {
+      game._purchasedRecipes.addAll(
+        purchased.whereType<String>().where(
+          (id) => PizzaRecipe.recipes.any((r) => r.id == id && r.price > 0),
+        ),
+      );
+    }
     final ratings = json['bestStars'];
     if (ratings is Map) {
       for (final entry in ratings.entries) {
@@ -337,15 +469,30 @@ class GameState {
         ),
       );
     }
+    final equipment = json['equipment'];
+    if (equipment is Map) {
+      for (final category in ['salt', 'oven', 'plant']) {
+        final id = equipment[category];
+        if (id is String &&
+            game._ownedCosmetics.contains(id) &&
+            (cosmetics.any((c) => c.id == id && c.category == category) ||
+                id == '${category}_default')) {
+          game._equipment[category] = id;
+        }
+      }
+    }
     final active = json['activeCosmetic'];
-    if (active is String && game._ownedCosmetics.contains(active)) {
+    if (active is String &&
+        game._ownedCosmetics.contains(active) &&
+        (active == 'cream' ||
+            cosmetics.any((c) => c.id == active && c.category == 'cloth'))) {
       game._activeCosmetic = active;
     }
     final index = json['orderIndex'];
     if (index is int &&
         index >= 0 &&
         index < orders.length &&
-        (json['freeMode'] == true || index < game.unlockedOrders)) {
+        game.ownsRecipe(orders[index].recipe.id)) {
       game._orderIndex = index;
       game._freeMode = json['freeMode'] == true;
       game._stage =
@@ -353,6 +500,7 @@ class GameState {
               .where((s) => s.name == json['stage'])
               .firstOrNull ??
           KitchenStage.ingredients;
+      if (game._stage == KitchenStage.knead) game._stage = KitchenStage.roll;
       final actions = json['actions'];
       if (actions is int) {
         game._actions = actions.clamp(0, game.requiredActions);
@@ -367,7 +515,9 @@ class GameState {
       if (toppings is Map) {
         for (final t in game.recipe.toppings) {
           final n = toppings[t];
-          if (n is int && n > 0) game._toppings[t] = n.clamp(0, 20);
+          if (n is int && n > 0) {
+            game._toppings[t] = n.clamp(0, game.order.targetFor(t));
+          }
         }
       }
       final d = json['distribution'];
@@ -381,7 +531,8 @@ class GameState {
           result['feedback'] is String) {
         game._result = OrderResult(
           (result['stars'] as int).clamp(0, 3),
-          (result['coins'] as int).clamp(0, 50),
+          ((result['coins'] as int) * (json['moneyVersion'] == 2 ? 1 : 100))
+              .clamp(0, 5000),
           result['feedback'] as String,
         );
       }

@@ -36,6 +36,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   audioplayers: ^6.8.1
   shared_preferences: ^2.5.6
+  sqflite: ^2.4.4+2
+  sqflite_common_ffi: ^2.4.4
+  path: ^1.9.1
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +67,8 @@ flutter:
     - assets/images/recipes/
     - assets/sound/background.wav
     - assets/sound/celebration.wav
+    - assets/sound/400686__supersnd__microwave-door-close.wav
+    - assets/sound/815147__annabax01q__tiiin-sfx.m4a
     - assets/sound/sand.wav
     - assets/sound/490114__manuelaurreaf__cutting-fabric.wav
 

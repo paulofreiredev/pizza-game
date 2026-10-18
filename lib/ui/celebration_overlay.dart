@@ -1,3 +1,5 @@
+import '../game/game_state.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -56,7 +58,7 @@ class _CelebrationOverlayState extends State<CelebrationOverlay>
                     opacity: entrance.clamp(0.0, 1.0),
                     child: Semantics(
                       liveRegion: true,
-                      label: 'Você ganhou ${widget.coins} moedas',
+                      label: 'Você ganhou ${formatCoins(widget.coins)} moedas',
                       child: ExcludeSemantics(
                         child: Container(
                           constraints: const BoxConstraints(maxWidth: 320),
@@ -90,7 +92,7 @@ class _CelebrationOverlayState extends State<CelebrationOverlay>
                               const SizedBox(width: 10),
                               Flexible(
                                 child: Text(
-                                  '+${widget.coins} Moedas',
+                                  '+${formatCoins(widget.coins)} Moedas',
                                   style: const TextStyle(
                                     color: Color(0xFF725027),
                                     fontSize: 24,

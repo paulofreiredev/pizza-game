@@ -7,8 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'game/game_state.dart';
 import 'services/game_audio.dart';
+import 'services/game_storage.dart';
 import 'ui/natural_kitchen.dart';
 import 'ui/recipe_intro_dialog.dart';
+import 'ui/shop_product_preview.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +23,8 @@ const ink = Color(0xFF563D31),
     sage = Color(0xFF647F59);
 
 class PizzaGameApp extends StatelessWidget {
-  const PizzaGameApp({super.key});
+  const PizzaGameApp({super.key, this.storage});
+  final GameStorage? storage;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Pizza Game',
@@ -45,12 +48,13 @@ class PizzaGameApp extends StatelessWidget {
         ),
       ),
     ),
-    home: const PizzaHome(),
+    home: PizzaHome(storage: storage),
   );
 }
 
 class PizzaHome extends StatefulWidget {
-  const PizzaHome({super.key});
+  const PizzaHome({super.key, this.storage});
+  final GameStorage? storage;
   @override
   State<PizzaHome> createState() => _PizzaHomeState();
 }
@@ -58,7 +62,8 @@ class PizzaHome extends StatefulWidget {
 class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
   GameState game = GameState();
   final audio = GameAudio();
-  SharedPreferences? prefs;
+  GameStorage? storage;
+  bool buyingRecipe = false;
   String page = 'home';
   bool ready = false, paused = false, appActive = true;
   List<Offset> toppingPoints = [], saucePoints = [];
@@ -78,8 +83,9 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     try {
-      prefs = await SharedPreferences.getInstance();
-      final raw = prefs!.getString('pizza_game_v1');
+      storage = widget.storage ?? await GameStorage.open();
+      final legacy = await SharedPreferences.getInstance();
+      final raw = await storage!.load() ?? legacy.getString('pizza_game_v1');
       if (raw != null) {
         final data = jsonDecode(raw) as Map<String, dynamic>;
         game = GameState.fromJson(
@@ -130,7 +136,9 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
           audio.effectsVolume = e.toDouble().clamp(0, 1);
         }
       }
+      await storage!.save(_snapshot());
     } catch (_) {
+      storage = null;
       persistenceError = 'Não foi possível restaurar o preparo anterior.';
     }
     if (!mounted) return;
@@ -146,7 +154,7 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
       }
       setState(() {
         if (ovenSeconds > 0) ovenSeconds--;
-        if (ovenSeconds == 0) game.performAction();
+        if (ovenSeconds == 0 && game.performAction()) audio.ovenReady();
       });
       _save();
     });
@@ -155,25 +163,25 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
+  String _snapshot() => jsonEncode({
+    'game': game.toJson(),
+    'toppingPoints': toppingPoints.map((p) => [p.dx, p.dy]).toList(),
+    'toppingKinds': toppingKinds,
+    'saucePoints': saucePoints.map((p) => [p.dx, p.dy]).toList(),
+    'sauceCells': sauceCells.toList(),
+    'cutLines': cutLines.toList(),
+    'ovenSeconds': ovenSeconds,
+    'music': audio.musicVolume,
+    'musicEnabled': audio.musicEnabled,
+    'effects': audio.effectsVolume,
+  });
+
   Future<void> _save() {
-    final snapshot = jsonEncode({
-      'game': game.toJson(),
-      'toppingPoints': toppingPoints.map((p) => [p.dx, p.dy]).toList(),
-      'toppingKinds': toppingKinds,
-      'saucePoints': saucePoints.map((p) => [p.dx, p.dy]).toList(),
-      'sauceCells': sauceCells.toList(),
-      'cutLines': cutLines.toList(),
-      'ovenSeconds': ovenSeconds,
-      'music': audio.musicVolume,
-      'musicEnabled': audio.musicEnabled,
-      'effects': audio.effectsVolume,
-    });
+    if (buyingRecipe) return saveQueue;
+    final snapshot = _snapshot();
     saveQueue = saveQueue.then((_) async {
       try {
-        if (prefs != null &&
-            !await prefs!.setString('pizza_game_v1', snapshot)) {
-          throw StateError('save');
-        }
+        if (storage != null) await storage!.save(snapshot);
       } catch (_) {
         if (mounted) {
           setState(
@@ -210,12 +218,25 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
   Future<void> _start(int i, {bool free = false}) async {
     if (showingRecipeIntro || i < 0 || i >= GameState.orders.length) return;
     showingRecipeIntro = true;
-    final begin = await showDialog<bool>(
-      context: context,
-      builder: (_) => RecipeIntroDialog(recipe: GameState.orders[i].recipe),
-    );
-    showingRecipeIntro = false;
-    if (!mounted || begin != true) return;
+    RecipeIntroAction? action;
+    try {
+      while (mounted) {
+        action = await showDialog<RecipeIntroAction>(
+          context: context,
+          builder: (_) => RecipeIntroDialog(
+            recipe: GameState.orders[i].recipe,
+            allowDecline: !free,
+          ),
+        );
+        if (!mounted || action != RecipeIntroAction.decline) break;
+        i = game.randomOrderIndex(
+          excludingFlavor: GameState.orders[i].recipe.id,
+        );
+      }
+    } finally {
+      showingRecipeIntro = false;
+    }
+    if (!mounted || action != RecipeIntroAction.start) return;
     if (!game.startOrder(i, freeMode: free)) return;
     toppingPoints = [];
     toppingKinds = [];
@@ -266,7 +287,6 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
                     ),
                   Expanded(
                     child: switch (page) {
-                      'campaign' => _campaign(),
                       'free' => _free(),
                       'shop' => _shop(),
                       'kitchen' => _kitchen(),
@@ -339,7 +359,7 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: () => setState(() => page = 'campaign'),
+                        onPressed: () => _start(game.nextOrderIndex),
                         icon: const Icon(Icons.play_arrow_rounded, size: 52),
                         label: const Text(
                           'Jogar',
@@ -363,7 +383,7 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
                       secondary: true,
                     ),
                     _menuButton(
-                      'Minha cozinha · ${game.coins} moedas',
+                      'Minha cozinha · ${formatCoins(game.coins)} moedas',
                       Icons.chair_outlined,
                       () => setState(() => page = 'shop'),
                       secondary: true,
@@ -474,130 +494,108 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
         ),
         Chip(
           avatar: const Icon(Icons.monetization_on_outlined, size: 18),
-          label: Text('${game.coins}'),
+          label: Text(formatCoins(game.coins)),
         ),
       ],
     ),
   );
-  Widget _campaign() => Column(
-    children: [
-      _header('Uma receita de cada vez', 'Caderno de pedidos'),
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 24),
-        child: Text(
-          '9 encontros, muitas delícias. Atenda no seu ritmo e personalize sua cozinha.',
-        ),
+  Future<void> _previewRecipe(PizzaRecipe recipe) async {
+    if (buyingRecipe) return;
+    final buy = await showDialog<bool>(
+      context: context,
+      builder: (_) => ShopPreviewDialog(
+        name: recipe.name,
+        preview: ShopProductPreview(recipe: recipe),
+        price: recipe.price,
+        balance: game.coins,
+        owned: game.ownsRecipe(recipe.id),
+        equipped: false,
+        reward: recipe.reward,
       ),
-      Expanded(
-        child: GridView.builder(
-          padding: const EdgeInsets.all(24),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 320,
-            mainAxisExtent: 340,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
+    );
+    if (buy == true && mounted) await _purchaseRecipe(recipe);
+  }
+
+  Future<void> _previewCosmetic(Cosmetic item) async {
+    if (buyingRecipe) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => ShopPreviewDialog(
+        name: item.name,
+        preview: ShopProductPreview(cosmetic: item),
+        price: item.price,
+        balance: game.coins,
+        owned: game.ownedCosmetics.contains(item.id),
+        equipped: game.isEquipped(item),
+      ),
+    );
+    if (confirm == true && mounted) {
+      await _purchaseCosmetic(
+        item,
+        owned: game.ownedCosmetics.contains(item.id),
+      );
+    }
+  }
+
+  Future<void> _purchaseRecipe(PizzaRecipe recipe) async {
+    if (buyingRecipe || game.ownsRecipe(recipe.id)) return;
+    if (game.coins < recipe.price) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Faltam ${formatCoins(recipe.price - game.coins)} moedas para ${recipe.name}.',
           ),
-          itemCount: 9,
-          itemBuilder: (context, i) {
-            final o = GameState.orders[i], unlocked = i < game.unlockedOrders;
-            return Card(
-              color: unlocked
-                  ? const Color(0xFFF0E4CC)
-                  : const Color(0xFFE7E1D6),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(22),
-                onTap: unlocked ? () => _confirmStart(i) : null,
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: cream,
-                            child: Icon(
-                              [
-                                Icons.face_rounded,
-                                Icons.face_3_rounded,
-                                Icons.face_4_rounded,
-                              ][i % 3],
-                              color: terra,
-                              size: 30,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '${i + 1}',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          Icon(
-                            unlocked
-                                ? Icons.play_circle_fill_rounded
-                                : Icons.lock_rounded,
-                            color: unlocked ? sage : Colors.grey,
-                            size: 32,
-                          ),
-                        ],
-                      ),
-                      Expanded(
-                        child: Center(
-                          child: Semantics(
-                            label: o.recipe.name,
-                            image: true,
-                            child: SizedBox(
-                              width: 120,
-                              height: 100,
-                              child: CustomPaint(
-                                painter: FoodSprite('pizza-${o.recipe.id}'),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        o.recipe.name,
-                        style: const TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '${o.customer} · ${o.instruction}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const Spacer(),
-                      Row(
-                        children: List.generate(
-                          3,
-                          (star) => Icon(
-                            star < game.starsForOrder(i)
-                                ? Icons.star_rounded
-                                : Icons.star_outline_rounded,
-                            color: const Color(0xFFD19736),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
         ),
-      ),
-    ],
-  );
+      );
+      return;
+    }
+    if (storage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'O salvamento precisa estar disponível para comprar receitas.',
+          ),
+        ),
+      );
+      return;
+    }
+    await _commitPurchase(() => game.buyRecipe(recipe.id));
+  }
+
+  Future<void> _purchaseCosmetic(Cosmetic item, {required bool owned}) async {
+    if (buyingRecipe) return;
+    await _commitPurchase(
+      () => owned ? game.equipCosmetic(item.id) : game.buyCosmetic(item.id),
+    );
+  }
+
+  Future<void> _commitPurchase(bool Function() change) async {
+    if (storage == null || buyingRecipe) return;
+    setState(() => buyingRecipe = true);
+    saveTimer?.cancel();
+    await saveQueue;
+    final before = game.toJson();
+    if (change()) {
+      final write = storage!.save(_snapshot());
+      saveQueue = write.catchError((Object _) {});
+      try {
+        await write;
+      } catch (_) {
+        game = GameState.fromJson(before);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'A compra não foi salva. Suas moedas foram mantidas.',
+              ),
+            ),
+          );
+        }
+      }
+    }
+    if (mounted) setState(() => buyingRecipe = false);
+  }
+
   Future<void> _confirmStart(int i, {bool free = false}) async {
     if (game.hasSession) {
       final replace = await showDialog<bool>(
@@ -626,12 +624,15 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
 
   Widget _free() => Column(
     children: [
-      _header('Sem pedidos, sem notas', 'Hoje a receita é sua'),
+      _header(
+        'Receitas · ${formatCoins(game.coins)} moedas',
+        'Hoje a receita é sua',
+      ),
       Expanded(
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: List.generate(
-            3,
+            PizzaRecipe.recipes.length,
             (i) => Card(
               color: const Color(0xFFF0E4CC),
               child: ListTile(
@@ -639,21 +640,42 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
                 leading: SizedBox(
                   width: 72,
                   height: 72,
-                  child: CustomPaint(
-                    painter: FoodSprite('pizza-${PizzaRecipe.recipes[i].id}'),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      'assets/images/recipes/${PizzaRecipe.recipes[i].id}.png',
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
                 title: Text(
                   PizzaRecipe.recipes[i].name,
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                subtitle: const Text('Prepare, decore e saboreie o momento.'),
+                subtitle: Text(
+                  game.ownsRecipe(PizzaRecipe.recipes[i].id)
+                      ? 'Pedido rende ${formatCoins(PizzaRecipe.recipes[i].reward)} moedas.'
+                      : 'Comprar por ${formatCoins(PizzaRecipe.recipes[i].price)} moedas',
+                ),
                 trailing: const Icon(
                   Icons.play_circle_fill_rounded,
                   color: sage,
                   size: 44,
                 ),
-                onTap: () => _confirmStart(i, free: true),
+                onTap: buyingRecipe
+                    ? null
+                    : () => game.ownsRecipe(PizzaRecipe.recipes[i].id)
+                          ? _confirmStart(
+                              GameState.orders
+                                  .firstWhere(
+                                    (o) =>
+                                        o.recipe.id ==
+                                        PizzaRecipe.recipes[i].id,
+                                  )
+                                  .index,
+                              free: true,
+                            )
+                          : _previewRecipe(PizzaRecipe.recipes[i]),
               ),
             ),
           ),
@@ -663,80 +685,103 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
   );
   Widget _shop() => Column(
     children: [
-      _header('Pequenos detalhes, muito aconchego', 'Minha cozinha'),
+      _header(
+        '${formatCoins(game.coins)} moedas para novas receitas e detalhes',
+        'Minha cozinha',
+      ),
       Expanded(
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
             const Text(
-              'Troque suas moedas por novas toalhas. Todas as receitas e ingredientes são gratuitos.',
+              'Personalize sua cozinha com toalhas, saleiros, fornos e plantas. Cada categoria pode ser usada junto com as outras.',
             ),
+            const SizedBox(height: 16),
+            ...PizzaRecipe.recipes
+                .where((r) => r.price > 0)
+                .map(
+                  (recipe) => Card(
+                    child: ListTile(
+                      onTap: () => _previewRecipe(recipe),
+                      leading: SizedBox(
+                        width: 56,
+                        height: 56,
+                        child: ShopProductPreview(recipe: recipe),
+                      ),
+                      title: Text(recipe.name),
+                      subtitle: Text(
+                        'Entrega: ${formatCoins(recipe.reward)} moedas',
+                      ),
+                      trailing: OutlinedButton(
+                        onPressed: buyingRecipe
+                            ? null
+                            : () => _previewRecipe(recipe),
+                        child: const Text('Ver'),
+                      ),
+                    ),
+                  ),
+                ),
             const SizedBox(height: 16),
             ...[
               const Cosmetic('cream', 'Toalha azul original', 0),
+              const Cosmetic(
+                'salt_default',
+                'Saleiro azul original',
+                0,
+                category: 'salt',
+              ),
+              const Cosmetic(
+                'oven_default',
+                'Forno original',
+                0,
+                category: 'oven',
+              ),
+              const Cosmetic(
+                'plant_default',
+                'Sem plantas',
+                0,
+                category: 'plant',
+              ),
               ...GameState.cosmetics,
             ].map((item) {
-              final owned = game.ownedCosmetics.contains(item.id),
-                  equipped = game.activeCosmetic == item.id;
-              final color = switch (item.id) {
-                'sage' => sage,
-                'rose' => const Color(0xFFAE7380),
-                'sunset' => const Color(0xFFB98B37),
-                _ => const Color(0xFF71A4C2),
-              };
               return Card(
                 color: const Color(0xFFF0E4CC),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: () => _previewCosmetic(item),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 64,
+                          height: 64,
+                          child: ShopProductPreview(cosmetic: item),
                         ),
-                        child: const Icon(Icons.grid_4x4, color: cream),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(child: Text(item.name)),
-                      FilledButton(
-                        onPressed:
-                            equipped || (!owned && game.coins < item.price)
-                            ? null
-                            : () {
-                                setState(() {
-                                  if (owned) {
-                                    game.equipCosmetic(item.id);
-                                  } else {
-                                    game.buyCosmetic(item.id);
-                                  }
-                                });
-                                _save();
-                              },
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              equipped
-                                  ? Icons.check_circle_rounded
-                                  : owned
-                                  ? Icons.touch_app_rounded
-                                  : Icons.monetization_on_rounded,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              equipped
-                                  ? 'Em uso'
-                                  : owned
-                                  ? 'Usar'
-                                  : '${item.price}',
-                            ),
-                          ],
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(item.name),
+                              Text(
+                                game.isEquipped(item)
+                                    ? 'Em uso'
+                                    : game.ownedCosmetics.contains(item.id)
+                                    ? 'Comprado'
+                                    : '${formatCoins(item.price)} moedas',
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        OutlinedButton(
+                          onPressed: buyingRecipe
+                              ? null
+                              : () => _previewCosmetic(item),
+                          child: const Text('Ver'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -765,7 +810,7 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
     onSettings: _settings,
     onHome: () => setState(() => page = 'home'),
     onRestart: () => _start(game.orderIndex, free: game.freeMode),
-    onNext: () => _start(game.orderIndex + 1),
+    onNext: () => _start(game.nextOrderIndex),
   );
 
   Future<void> _pause() async {

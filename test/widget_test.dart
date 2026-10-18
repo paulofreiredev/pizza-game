@@ -1,3 +1,11 @@
+import 'package:pizza_game/ui/recipe_intro_dialog.dart';
+
+import 'dart:convert';
+
+import 'package:pizza_game/ui/shop_product_preview.dart';
+import 'package:pizza_game/services/game_storage.dart';
+import 'package:sqflite/sqflite.dart' show Database;
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -10,8 +18,30 @@ import 'package:pizza_game/services/game_audio.dart';
 import 'package:pizza_game/ui/kitchen_painter.dart';
 import 'package:pizza_game/ui/natural_kitchen.dart';
 
+class MemoryStorage implements GameStorage {
+  String? snapshot;
+  @override
+  Database get database => throw UnimplementedError();
+  @override
+  Future<String?> load() async => snapshot;
+  @override
+  Future<void> save(String value) async {
+    snapshot = value;
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
 class SilentAudio extends GameAudio {
-  int celebrations = 0;
+  int celebrations = 0, doorClosings = 0;
+  @override
+  Future<void> ovenDoorClosed() async {
+    doorClosings++;
+  }
+
+  @override
+  Future<void> ovenReady() async {}
   @override
   Future<void> rub(bool active) async {}
   @override
@@ -108,6 +138,97 @@ void prepareUntil(GameState game, KitchenStage target) {
 
 void main() {
   testWidgets(
+    'shop previews are free to inspect and purchases require confirmation',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final storage = MemoryStorage()
+        ..snapshot = jsonEncode({
+          'game': GameState.fromJson({'coins': 50000, 'moneyVersion': 2})
+              .toJson(),
+        });
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Minha cozinha ·'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Saleiro dourado'), 300);
+      await tester.tap(find.text('Saleiro dourado'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ShopPreviewDialog), findsOneWidget);
+      expect(find.text('Comprar por 129,00 moedas'), findsOneWidget);
+      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 50000);
+      await tester.tap(find.byTooltip('Fechar prévia'));
+      await tester.pumpAndSettle();
+      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 50000);
+      await tester.tap(find.text('Saleiro dourado'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Comprar por 129,00 moedas'));
+      await tester.pumpAndSettle();
+      final saved = GameState.fromJson(
+        jsonDecode(storage.snapshot!)['game'] as Map<String, dynamic>,
+      );
+      expect(saved.coins, 37100);
+      expect(saved.equippedFor('salt'), 'salt_gold');
+      await tester.scrollUntilVisible(
+        find.text('Carne de sol com queijo'),
+        -400,
+      );
+      await tester.tap(find.text('Carne de sol com queijo'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ShopPreviewDialog), findsOneWidget);
+      expect(find.text('Faltam 28,00 moedas.'), findsOneWidget);
+      final buy = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Comprar por 399,00 moedas'),
+      );
+      expect(buy.onPressed, isNull);
+      await tester.tap(find.byTooltip('Fechar prévia'));
+      await tester.pumpAndSettle();
+      expect((jsonDecode(storage.snapshot!)['game'] as Map)['coins'], 37100);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
+  testWidgets(
+    'declining a request offers a different owned recipe without starting or charging',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final storage = MemoryStorage();
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      final before = storage.snapshot;
+      await tester.tap(find.text('Jogar'));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 4; i++) {
+        final previous = tester
+            .widget<RecipeIntroDialog>(find.byType(RecipeIntroDialog))
+            .recipe
+            .id;
+        await tester.ensureVisible(
+          find.byKey(const Key('recipe-intro-decline')),
+        );
+        await tester.tap(find.byKey(const Key('recipe-intro-decline')));
+        await tester.pumpAndSettle();
+        final next = tester
+            .widget<RecipeIntroDialog>(find.byType(RecipeIntroDialog))
+            .recipe
+            .id;
+        expect(next, isNot(previous));
+        expect(PizzaRecipe.recipes.take(3).any((r) => r.id == next), isTrue);
+        expect(find.byKey(const Key('natural-board')), findsNothing);
+        expect(storage.snapshot, before);
+      }
+      await tester.tap(find.byKey(const Key('recipe-intro-start')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const Key('natural-board')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
+  testWidgets(
     'menu and illustrated board work on phone and desktop without cooking buttons',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
@@ -115,15 +236,14 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(const PizzaGameApp());
+      await tester.pumpWidget(PizzaGameApp(storage: MemoryStorage()));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Jogar'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('1'));
-      await tester.pumpAndSettle();
       expect(find.text('Vamos preparar!'), findsOneWidget);
       expect(find.byKey(const Key('natural-board')), findsNothing);
-      expect(find.bySemanticsLabel('Pizza Marguerita pronta'), findsOneWidget);
+      expect(find.text('Pedidos chegando'), findsNothing);
+      expect(find.text('Vamos preparar!'), findsOneWidget);
       await tester.tap(find.byKey(const Key('recipe-intro-start')));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const Key('natural-board')), findsOneWidget);
@@ -200,12 +320,9 @@ void main() {
         );
       }
       await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
       expect(game.stage, KitchenStage.mix);
-      for (final stage in [
-        KitchenStage.mix,
-        KitchenStage.knead,
-        KitchenStage.roll,
-      ]) {
+      for (final stage in [KitchenStage.mix, KitchenStage.roll]) {
         expect(game.stage, stage);
         if (stage == KitchenStage.knead) {
           final g = await tester.startGesture(center());
@@ -292,6 +409,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 800));
       expect(game.actions, 2);
+      expect(audio.doorClosings, 1);
       await tester.pump(const Duration(seconds: 7));
       await tester.pump();
       expect(game.actions, 3);
@@ -330,10 +448,10 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pump();
     expect(game.isComplete, isTrue);
-    expect(find.text('+50 Moedas'), findsOneWidget);
+    expect(find.text('+29,29 Moedas'), findsOneWidget);
     expect(audio.celebrations, 1);
     await tester.pump(const Duration(seconds: 4));
-    expect(game.coins, 50);
+    expect(game.coins, 2929);
     expect(audio.celebrations, 1);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
@@ -408,7 +526,19 @@ void main() {
     await tester.pump();
     await gesture.moveBy(Offset(u * .15, -u * .12));
     await tester.pump();
+    KitchenPainter currentPainter() => tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((w) => w.painter)
+        .whereType<KitchenPainter>()
+        .single;
+    final beforeMove = currentPainter().toolPosition!;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(currentPainter().toolPosition, beforeMove);
     await gesture.moveBy(Offset(-u * .1, u * .16));
+    await tester.pump();
+    final moved = currentPainter().toolPosition! - beforeMove;
+    expect(moved.dx, closeTo(-.1, .001));
+    expect(moved.dy, closeTo(.16, .001));
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 250));
     final painter = tester
@@ -430,7 +560,7 @@ void main() {
     'recipe photo can be dismissed without starting a free-play session',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
-      await tester.pumpWidget(const PizzaGameApp());
+      await tester.pumpWidget(PizzaGameApp(storage: MemoryStorage()));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Modo livre'));
       await tester.pumpAndSettle();

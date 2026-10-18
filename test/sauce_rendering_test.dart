@@ -5,7 +5,7 @@ import 'package:pizza_game/ui/kitchen_painter.dart';
 
 void main() {
   test(
-    'sauce remains visible in the middle before and after pizza assembly',
+    'grated cheese leaves sauce visible between strands without a solid disk',
     () async {
       for (final stage in ['toppings', 'slice']) {
         final recorder = ui.PictureRecorder();
@@ -13,6 +13,8 @@ void main() {
           stage: stage,
           progress: 0,
           recipeId: 'margherita',
+          toppings: const [ui.Offset(.68, .51)],
+          toppingKinds: const ['queijo'],
           showTool: false,
         ).paint(ui.Canvas(recorder), const ui.Size(400, 400));
         final picture = recorder.endRecording();

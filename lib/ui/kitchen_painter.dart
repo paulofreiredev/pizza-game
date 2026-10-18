@@ -1,3 +1,11 @@
+import 'dart:ui' as ui;
+
+import 'ready_pizza_photo.dart';
+import 'ingredient_details.dart';
+import 'dough_mixture.dart';
+import 'decorative_plant.dart';
+import 'prepared_ingredient_bowl.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -11,6 +19,8 @@ class KitchenPainter extends CustomPainter {
     this.toppingKinds = const [],
     this.saucePoints = const [],
     this.cosmetic = 'cream',
+    this.ovenStyle = 'oven_default',
+    this.plantStyle = 'plant_default',
     this.toolPosition,
     this.showTool = true,
     this.ovenOpen = true,
@@ -20,9 +30,20 @@ class KitchenPainter extends CustomPainter {
     this.cutAnimation = 1,
     this.cutCount = -1,
     this.boardOnly = false,
+    this.doughIngredients = const {},
+    this.pourIngredient,
+    this.pourProgress = 1,
+    this.pourFrom,
+    this.mixPhase = 0,
+    this.readyPizzaImage,
   });
-  final String stage, recipeId, cosmetic;
+  final String stage, recipeId, cosmetic, ovenStyle, plantStyle;
   final double progress;
+  final ui.Image? readyPizzaImage;
+  final Set<String> doughIngredients;
+  final String? pourIngredient;
+  final double pourProgress, mixPhase;
+  final Offset? pourFrom;
   final Offset? toolPosition;
   final bool showTool, ovenOpen, boardOnly;
   final int ovenActions, cutCount;
@@ -142,7 +163,26 @@ class KitchenPainter extends CustomPainter {
             fill(j.isEven ? const Color(0xFF3F7848) : const Color(0xFF74A652)),
           );
         }
+      } else if (kind == 'camarão') {
+        paintShrimp(c, Offset.zero, .16);
+      } else if (kind == 'catupiri') {
+        paintCatupiri(c, Offset.zero, .20);
+      } else if ((kind == 'frango' || kind == 'carne de sol')) {
+        for (var j = 0; j < 7; j++) {
+          final q = Offset((j % 3 - 1) * .07, (j ~/ 3 - 1) * .06);
+          c.drawLine(
+            q,
+            q + const Offset(.10, -.045),
+            Paint()
+              ..color = j.isEven
+                  ? const Color(0xFFE6BC7C)
+                  : const Color(0xFFFFDEA7)
+              ..strokeWidth = .035
+              ..strokeCap = StrokeCap.round,
+          );
+        }
       } else if (kind == 'calabresa') {
+        c.scale(1.1);
         ellipse(
           Rect.fromCircle(center: const Offset(.009, .018), radius: .12),
           const Color(0x486B3524),
@@ -185,6 +225,7 @@ class KitchenPainter extends CustomPainter {
           );
         }
       } else if (kind == 'cebola') {
+        c.scale(1.25);
         ellipse(
           Rect.fromCircle(center: Offset.zero, radius: .13),
           const Color(0x44FFEAF4),
@@ -203,10 +244,16 @@ class KitchenPainter extends CustomPainter {
               ..strokeWidth = .016,
           );
         }
-      } else if (kind == 'queijo') {
-        for (var j = 0; j < 7; j++) {
-          final x = math.cos(j * 2.4 + seed) * .105;
-          final y = math.sin(j * 2.4 + seed) * .09;
+      } else if ([
+        'queijo',
+        'muçarela',
+        'provolone',
+        'gorgonzola',
+        'parmesão',
+      ].contains(kind)) {
+        for (var j = 0; j < 24; j++) {
+          final x = math.cos(j * 2.4 + seed) * (.10 + (j % 4) * .045);
+          final y = math.sin(j * 2.4 + seed) * (.09 + (j % 3) * .045);
           final strand = Path()
             ..moveTo(x - .065, y - .018)
             ..quadraticBezierTo(x, y + .025, x + .075, y - .012);
@@ -353,23 +400,11 @@ class KitchenPainter extends CustomPainter {
       );
     }
     c.restore();
-    box(
-      Rect.fromLTWH(s.width * .06, s.height * .08, u * .13, u * .15),
-      const Color(0xFFB76E4D),
-      8,
-    );
-    for (var i = 0; i < 7; i++) {
-      final p = Offset(
-        s.width * .06 + u * (.065 + math.sin(i * 2.4) * .05),
-        s.height * .08 + u * math.cos(i * 2.4) * .045,
-      );
-      c.drawOval(
-        Rect.fromCenter(center: p, width: u * .055, height: u * .028),
-        Paint()
-          ..color = i.isEven
-              ? const Color(0xFF698356)
-              : const Color(0xFF91A16A),
-      );
+    if (plantStyle == 'plant_fern' || plantStyle == 'plant_flowers') {
+      c.save();
+      c.translate(s.width * .80, s.height * .025);
+      DecorativePlant(plantStyle).paint(c, Size(u * .18, u * .215));
+      c.restore();
     }
     if (boardOnly) return;
     if (stage == 'oven') {
@@ -378,7 +413,15 @@ class KitchenPainter extends CustomPainter {
         width: u * .9,
         height: u * .78,
       );
-      box(oven, const Color(0xFF9AABA0), 24);
+      box(
+        oven,
+        ovenStyle == 'oven_copper'
+            ? const Color(0xFFBE784F)
+            : ovenStyle == 'oven_rose'
+            ? const Color(0xFFD39A9E)
+            : const Color(0xFF9AABA0),
+        24,
+      );
       box(oven.deflate(u * .06), const Color(0xFF483E36), 16);
       final glow = Rect.fromCenter(
         center: center,
@@ -399,7 +442,13 @@ class KitchenPainter extends CustomPainter {
             ],
           ).createShader(glow),
       );
-      if (ovenActions > 0) {
+      if (ovenActions >= 3 && readyPizzaImage != null) {
+        paintReadyPizza(
+          c,
+          readyPizzaImage!,
+          Rect.fromCircle(center: center, radius: r * .64),
+        );
+      } else if (ovenActions > 0) {
         dot(center, r * .64, const Color(0xFFDBA658));
         dot(
           center,
@@ -462,18 +511,16 @@ class KitchenPainter extends CustomPainter {
       dot(center + const Offset(0, 8), r * 1.1, const Color(0x28704C32));
       dot(center, r * 1.08, const Color(0xFFA7B8AC));
       dot(center, r * .94, const Color(0xFF677E77));
-      if (progress > 0 || stage == 'mix') {
-        dot(center, r * .86, const Color(0xFFF5E3BE));
-        for (var i = 0; i < 28; i++) {
-          final a = i * 2.399;
-          dot(
-            center +
-                Offset(math.cos(a), math.sin(a)) * math.sqrt(i / 28) * r * .7,
-            u * .008,
-            const Color(0xFFE3CAA1),
-          );
-        }
-      }
+      DoughMixturePainter(
+        ingredients: doughIngredients,
+        mixing: stage == 'mix',
+        progress: progress,
+        phase: mixPhase,
+        pouring: pourIngredient,
+        pourProgress: pourProgress,
+        pourFrom: pourFrom,
+        spoon: toolPosition,
+      ).paint(c, s);
       if (stage == 'mix' && showTool) {
         c.save();
         c.translate(tool.dx, tool.dy);
@@ -561,108 +608,118 @@ class KitchenPainter extends CustomPainter {
 
       final sausageCuts = math.min(cuts, 5);
       final onionCuts = math.max(0, cuts - 5);
-      c.save();
-      ingredientGroup(
-        sausageBowl,
-        cuts > 5
-            ? 1
-            : cuts == 5
-            ? (t - .55) / .43
-            : 0,
-      );
-      final sausage = Rect.fromCenter(
-        center: center,
-        width: r * 1.64,
-        height: r * .35,
-      );
-      final remainingX = center.dx + r * (-.82 + sausageCuts * .27);
-      // One continuous casing; the clip exposes only the uncut remainder.
-      c.save();
-      c.clipRect(
-        Rect.fromLTRB(
-          remainingX,
-          sausage.top - r * .06,
-          sausage.right + r * .08,
-          sausage.bottom + r * .07,
-        ),
-      );
-      c.drawRRect(
-        RRect.fromRectAndRadius(
-          sausage.shift(Offset(0, r * .025)),
-          Radius.circular(r * .175),
-        ),
-        Paint()..color = const Color(0x356B3926),
-      );
-      c.drawRRect(
-        RRect.fromRectAndRadius(sausage, Radius.circular(r * .175)),
-        Paint()
-          ..shader = const LinearGradient(
-            colors: [Color(0xFFC97B53), Color(0xFF9C4833), Color(0xFF743624)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ).createShader(sausage),
-      );
-      c.drawArc(
-        sausage.deflate(r * .055),
-        math.pi * 1.08,
-        math.pi * .82,
-        false,
-        Paint()
-          ..color = const Color(0x55FFD3A1)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = r * .025,
-      );
-      c.restore();
-      if (sausageCuts > 0) {
-        c.drawOval(
-          Rect.fromCenter(
-            center: Offset(remainingX + r * .025, sausage.center.dy),
-            width: r * .065,
-            height: r * .30,
+      final sausageStored = cuts > 5 || (cuts == 5 && t >= .98);
+      if (!sausageStored) {
+        c.save();
+        ingredientGroup(
+          sausageBowl,
+          cuts > 5
+              ? 1
+              : cuts == 5
+              ? (t - .55) / .43
+              : 0,
+        );
+        final sausage = Rect.fromCenter(
+          center: center,
+          width: r * 1.64,
+          height: r * .35,
+        );
+        final remainingX = center.dx + r * (-.82 + sausageCuts * .27);
+        // One continuous casing; the clip exposes only the uncut remainder.
+        c.save();
+        c.clipRect(
+          Rect.fromLTRB(
+            remainingX,
+            sausage.top - r * .06,
+            sausage.right + r * .08,
+            sausage.bottom + r * .07,
           ),
-          Paint()..color = const Color(0xFFCA8763),
         );
-      }
-      // Only slices already cut leave the sausage and settle below it.
-      for (var i = 0; i < sausageCuts; i++) {
-        final time = pieceTime(i);
-        final separation = (time / .3).clamp(0.0, 1.0);
-        final drop = falling(time);
-        final p =
-            center +
-            Offset(
-              r * (-.82 + (i + .5) * .27 - .07 * separation),
-              r * ((.29 + .045 * (i % 2)) * drop),
-            );
-        final piece = Rect.fromCenter(
-          center: p,
-          width: r * .20,
-          height: r * .32,
-        );
-        c.drawOval(
-          piece.shift(Offset(0, r * .018)),
+        c.drawRRect(
+          RRect.fromRectAndRadius(
+            sausage.shift(Offset(0, r * .025)),
+            Radius.circular(r * .175),
+          ),
           Paint()..color = const Color(0x356B3926),
         );
-        c.drawOval(piece, Paint()..color = const Color(0xFF783526));
-        c.drawOval(
-          piece.deflate(r * .019),
-          Paint()..color = const Color(0xFFC77C5C),
+        c.drawRRect(
+          RRect.fromRectAndRadius(sausage, Radius.circular(r * .175)),
+          Paint()
+            ..shader = const LinearGradient(
+              colors: [Color(0xFFC97B53), Color(0xFF9C4833), Color(0xFF743624)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ).createShader(sausage),
         );
-        for (var j = 0; j < 6; j++) {
-          final a = j * 2.399 + i;
+        c.drawArc(
+          sausage.deflate(r * .055),
+          math.pi * 1.08,
+          math.pi * .82,
+          false,
+          Paint()
+            ..color = const Color(0x55FFD3A1)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = r * .025,
+        );
+        c.restore();
+        if (sausageCuts > 0) {
           c.drawOval(
             Rect.fromCenter(
-              center: p + Offset(math.cos(a) * r * .055, math.sin(a) * r * .09),
-              width: r * .026,
-              height: r * .019,
+              center: Offset(remainingX + r * .025, sausage.center.dy),
+              width: r * .065,
+              height: r * .30,
             ),
-            Paint()..color = const Color(0xFFFFD4A5),
+            Paint()..color = const Color(0xFFCA8763),
           );
         }
+        // Only slices already cut leave the sausage and settle below it.
+        for (var i = 0; i < sausageCuts; i++) {
+          final time = pieceTime(i);
+          final separation = (time / .3).clamp(0.0, 1.0);
+          final drop = falling(time);
+          final p =
+              center +
+              Offset(
+                r * (-.82 + (i + .5) * .27 - .07 * separation),
+                r * ((.29 + .045 * (i % 2)) * drop),
+              );
+          final piece = Rect.fromCenter(
+            center: p,
+            width: r * .20,
+            height: r * .32,
+          );
+          c.drawOval(
+            piece.shift(Offset(0, r * .018)),
+            Paint()..color = const Color(0x356B3926),
+          );
+          c.drawOval(piece, Paint()..color = const Color(0xFF783526));
+          c.drawOval(
+            piece.deflate(r * .019),
+            Paint()..color = const Color(0xFFC77C5C),
+          );
+          for (var j = 0; j < 6; j++) {
+            final a = j * 2.399 + i;
+            c.drawOval(
+              Rect.fromCenter(
+                center:
+                    p + Offset(math.cos(a) * r * .055, math.sin(a) * r * .09),
+                width: r * .026,
+                height: r * .019,
+              ),
+              Paint()..color = const Color(0xFFFFD4A5),
+            );
+          }
+        }
+        c.restore();
+      } else {
+        c.save();
+        c.translate(sausageBowl.dx - u * .125, sausageBowl.dy - u * .125);
+        const PreparedIngredientBowl('calabresa')
+            .paint(c, Size.square(u * .25));
+        c.restore();
       }
-      c.restore();
       final onionVisible = cuts > 5 || (cuts == 5 && t >= .98);
-      if (onionVisible) {
+      if (onionVisible && !(cuts == 10 && t >= .98)) {
         c.save();
         ingredientGroup(onionBowl, cuts == 10 ? (t - .55) / .43 : 0);
         final onion = center;
@@ -766,23 +823,16 @@ class KitchenPainter extends CustomPainter {
         }
         c.restore();
       }
+      if (cuts == 10 && t >= .98) {
+        c.save();
+        c.translate(onionBowl.dx - u * .125, onionBowl.dy - u * .125);
+        const PreparedIngredientBowl('cebola').paint(c, Size.square(u * .25));
+        c.restore();
+      }
       final transferring = (cuts == 5 && t >= .55 && t < .98) || cuts == 10;
       if (showTool && !transferring && cuts < 10) {
-        // The blade stays on the next cut boundary of the remaining ingredient.
-        final active = cuts > 0 && t < 1 ? cuts - 1 : math.min(cuts, 9);
-        final cuttingSausage = active < 5;
-        final bladeX =
-            center.dx +
-            r *
-                (cuttingSausage
-                    ? -.82 + (active + 1) * .27
-                    : -.38 + (active - 5 + 1) * .14);
-        final bladeY = toolPosition == null ? center.dy : tool.dy;
         c.save();
-        c.translate(
-          bladeX,
-          bladeY + (cuts > 0 ? math.sin(t * math.pi) * r * .23 : 0),
-        );
+        c.translate(tool.dx, tool.dy);
         box(
           Rect.fromLTWH(-r * .04, -r * .42, r * .10, r * .65),
           const Color(0xFFD8E4E2),
@@ -804,95 +854,130 @@ class KitchenPainter extends CustomPainter {
       }
       return;
     }
-    final doughR = stage == 'knead'
-        ? r * (.6 + progress * .08)
-        : stage == 'roll'
-        ? r * (.68 + progress * .32)
-        : r;
-    dot(center + const Offset(0, 5), doughR, const Color(0x35613D26));
-    dot(center, doughR, const Color(0xFFE9BB75));
-    dot(
-      center - Offset(0, doughR * .035),
-      doughR * .92,
-      const Color(0xFFF5D99C),
-    );
-    if (stage == 'knead' || stage == 'roll') {
-      c.drawArc(
-        Rect.fromCircle(center: center, radius: doughR * .65),
-        .4,
-        2.2,
-        false,
-        Paint()
-          ..color = const Color(0x55BB8A50)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3,
+    if (readyPizzaImage != null &&
+        ['slice', 'serve', 'complete'].contains(stage)) {
+      paintReadyPizza(
+        c,
+        readyPizzaImage!,
+        Rect.fromCircle(center: center, radius: r),
       );
-      if (stage == 'roll' && showTool) {
-        c.save();
-        c.translate(tool.dx, tool.dy);
-        box(
-          Rect.fromLTWH(-r * 1.3, -u * .025, r * 2.6, u * .05),
-          const Color(0xFF98613C),
-          8,
-        );
-        box(
-          Rect.fromLTWH(-r * .9, -u * .055, r * 1.8, u * .11),
-          const Color(0xFFD4A36A),
-          10,
-        );
-        c.restore();
-      }
-      return;
-    }
-    final sauce = sweet ? const Color(0xFF6C3828) : const Color(0xFFC85838);
-    if (stage == 'sauce') {
-      c.save();
-      c.clipPath(
-        Path()..addOval(Rect.fromCircle(center: center, radius: r * .82)),
-      );
-      for (final point in saucePoints) {
-        dot(
-          center + Offset((point.dx - .5) * u, (point.dy - .51) * u),
-          u * .065,
-          sauce,
-        );
-      }
-      c.restore();
-      if (showTool) {
-        c.save();
-        c.translate(tool.dx, tool.dy);
-        box(
-          Rect.fromLTWH(-u * .016, -u * .22, u * .032, u * .23),
-          const Color(0xFFBA8353),
-          8,
-        );
-        c.drawOval(
-          Rect.fromCenter(center: Offset.zero, width: u * .09, height: u * .12),
-          Paint()..color = const Color(0xFFAB744A),
-        );
-        c.drawOval(
-          Rect.fromCenter(
-            center: Offset.zero,
-            width: u * .065,
-            height: u * .085,
-          ),
-          Paint()..color = sauce,
-        );
-        c.restore();
-      }
     } else {
-      dot(center, r * .83, sauce);
-      for (var i = 0; i < toppings.length; i++) {
-        final p =
-            center +
-            Offset((toppings[i].dx - .5) * u, (toppings[i].dy - .51) * u);
-        if ((p - center).distance > r * .9) continue;
-        final kind = i < toppingKinds.length
-            ? toppingKinds[i]
-            : sweet
-            ? 'morango'
-            : 'calabresa';
-        ingredient(p, kind, i);
+      final doughR = stage == 'knead'
+          ? r * (.6 + progress * .08)
+          : stage == 'roll'
+          ? r * (.68 + progress * .32)
+          : r;
+      dot(center + const Offset(0, 5), doughR, const Color(0x35613D26));
+      dot(center, doughR, const Color(0xFFE9BB75));
+      dot(
+        center - Offset(0, doughR * .035),
+        doughR * .92,
+        const Color(0xFFF5D99C),
+      );
+      if (stage == 'knead' || stage == 'roll') {
+        c.drawArc(
+          Rect.fromCircle(center: center, radius: doughR * .65),
+          .4,
+          2.2,
+          false,
+          Paint()
+            ..color = const Color(0x55BB8A50)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3,
+        );
+        if (stage == 'roll' && showTool) {
+          c.save();
+          c.translate(tool.dx, tool.dy);
+          box(
+            Rect.fromLTWH(-r * 1.3, -u * .025, r * 2.6, u * .05),
+            const Color(0xFF98613C),
+            8,
+          );
+          box(
+            Rect.fromLTWH(-r * .9, -u * .055, r * 1.8, u * .11),
+            const Color(0xFFD4A36A),
+            10,
+          );
+          c.restore();
+        }
+        return;
+      }
+      final sauce = sweet ? const Color(0xFF6C3828) : const Color(0xFFC85838);
+      if (stage == 'sauce') {
+        c.save();
+        c.clipPath(
+          Path()..addOval(Rect.fromCircle(center: center, radius: r * .82)),
+        );
+        for (final point in saucePoints) {
+          dot(
+            center + Offset((point.dx - .5) * u, (point.dy - .51) * u),
+            u * .065,
+            sauce,
+          );
+        }
+        c.restore();
+        if (showTool) {
+          c.save();
+          c.translate(tool.dx, tool.dy);
+          box(
+            Rect.fromLTWH(-u * .016, -u * .22, u * .032, u * .23),
+            const Color(0xFFBA8353),
+            8,
+          );
+          c.drawOval(
+            Rect.fromCenter(
+              center: Offset.zero,
+              width: u * .09,
+              height: u * .12,
+            ),
+            Paint()..color = const Color(0xFFAB744A),
+          );
+          c.drawOval(
+            Rect.fromCenter(
+              center: Offset.zero,
+              width: u * .065,
+              height: u * .085,
+            ),
+            Paint()..color = sauce,
+          );
+          c.restore();
+        }
+      } else {
+        dot(center, r * .83, sauce);
+        c.save();
+        c.clipPath(
+          Path()..addOval(Rect.fromCircle(center: center, radius: r * .83)),
+        );
+        const cheeses = {
+          'queijo',
+          'muçarela',
+          'provolone',
+          'gorgonzola',
+          'parmesão',
+        };
+        final layers = List.generate(toppings.length, (i) => i)
+          ..sort((a, b) {
+            int layer(int i) =>
+                i < toppingKinds.length && cheeses.contains(toppingKinds[i])
+                ? 0
+                : i < toppingKinds.length && toppingKinds[i] == 'cebola'
+                ? 2
+                : 1;
+            return layer(a).compareTo(layer(b));
+          });
+        for (final i in layers) {
+          final p =
+              center +
+              Offset((toppings[i].dx - .5) * u, (toppings[i].dy - .51) * u);
+          if ((p - center).distance > r * .9) continue;
+          final kind = i < toppingKinds.length
+              ? toppingKinds[i]
+              : sweet
+              ? 'morango'
+              : 'calabresa';
+          ingredient(p, kind, i);
+        }
+        c.restore();
       }
     }
     if (stage == 'slice' && cuttingTrail.length > 1) {

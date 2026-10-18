@@ -1,3 +1,11 @@
+import 'dart:ui' as ui;
+
+import 'package:flutter/services.dart';
+
+import 'ready_pizza_photo.dart';
+import 'ingredient_details.dart';
+import 'prepared_ingredient_bowl.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -54,6 +62,12 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     with TickerProviderStateMixin {
   late final AnimationController hint;
   late final AnimationController cutMotion;
+  late final AnimationController pourMotion;
+  String? pouringIngredient;
+  Offset? pouringFrom;
+  double mixPhase = 0;
+  ui.Image? readyPizzaImage;
+  String? requestedPhoto;
   late final AnimationController doorMotion, transferMotion, boxMotion;
   Offset? flightFrom, flightTo, lastSprinkle;
   VoidCallback? afterFlight;
@@ -115,15 +129,51 @@ class _NaturalKitchenState extends State<NaturalKitchen>
         }
       : _screen(tool!);
 
+  Future<void> _loadRecipePhoto() async {
+    final id = game.recipe.id;
+    requestedPhoto = id;
+    final data = await rootBundle.load('assets/images/recipes/$id.png');
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: 768,
+    );
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    if (!mounted || game.recipe.id != id) {
+      frame.image.dispose();
+      return;
+    }
+    final previousPhoto = readyPizzaImage;
+    setState(() => readyPizzaImage = frame.image);
+    previousPhoto?.dispose();
+  }
+
+  Widget _pizzaSprite({bool cooked = false}) => CustomPaint(
+    painter: cooked && readyPizzaImage != null
+        ? ReadyPizzaPhoto(readyPizzaImage!)
+        : FoodSprite('pizza-${game.recipe.id}', bowl: false),
+  );
+
   @override
   void initState() {
     super.initState();
+    _loadRecipePhoto();
     observed = game.stage;
     ovenOpen = game.actions < 2;
     hint = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2600),
     );
+    pourMotion =
+        AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 700),
+            value: 1,
+          )
+          ..addListener(_frame)
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.completed) _queueNext();
+          });
     cutMotion =
         AnimationController(
             vsync: this,
@@ -132,14 +182,14 @@ class _NaturalKitchenState extends State<NaturalKitchen>
           )
           ..addListener(() {
             if (guidedFrom != null && guidedTo != null) {
-              tool = Offset.lerp(
+              final cutPoint = Offset.lerp(
                 guidedFrom!,
                 guidedTo!,
                 Curves.easeInOut.transform(cutMotion.value),
               );
               if (guidedStage == KitchenStage.slice) {
                 cuttingTrail.clear();
-                cuttingTrail.addAll([guidedFrom!, tool!]);
+                cuttingTrail.addAll([guidedFrom!, cutPoint!]);
               }
             }
             if (mounted) setState(() {});
@@ -205,6 +255,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
   @override
   void didUpdateWidget(covariant NaturalKitchen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (requestedPhoto != game.recipe.id) _loadRecipePhoto();
     if (observed != game.stage) {
       observed = game.stage;
       cuttingTrail.clear();
@@ -292,6 +343,8 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     transferMotion.dispose();
     boxMotion.dispose();
     cutMotion.dispose();
+    pourMotion.dispose();
+    readyPizzaImage?.dispose();
     super.dispose();
   }
 
@@ -310,6 +363,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
         !gestureEnded ||
         !_autoReady ||
         cutMotion.isAnimating ||
+        pourMotion.isAnimating ||
         transition != null) {
       return;
     }
@@ -435,10 +489,6 @@ class _NaturalKitchenState extends State<NaturalKitchen>
 
   void _move(Offset p) {
     if (!widget.active || dragging == null || previous == null) return;
-    if (cutThisGesture &&
-        [KitchenStage.slice, KitchenStage.chop].contains(game.stage)) {
-      return;
-    }
     final delta = p - previous!;
     previous = p;
     pointer = p;
@@ -456,7 +506,9 @@ class _NaturalKitchenState extends State<NaturalKitchen>
       final tip = dragging == 'dough' ? p : toolPoint;
       if ([KitchenStage.slice, KitchenStage.chop].contains(game.stage)) {
         distance += delta.distance;
-        if (distance >= u * .08 &&
+        if (!cutThisGesture &&
+            !cutMotion.isAnimating &&
+            distance >= u * .08 &&
             (_inside(p, 1.5) || _inside(toolPoint, 1.5)) &&
             !game.canAdvance) {
           cutThisGesture = true;
@@ -476,6 +528,11 @@ class _NaturalKitchenState extends State<NaturalKitchen>
             widget.cutLines.add(game.actions);
             game.performAction();
           }
+          if ((tool! - guidedTo!).distance < (tool! - guidedFrom!).distance) {
+            final start = guidedFrom;
+            guidedFrom = guidedTo;
+            guidedTo = start;
+          }
           widget.audio.cut();
           cutMotion.forward(from: 0);
         }
@@ -489,6 +546,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
       }
       if (_inside(tip, 1.05)) {
         distance += delta.distance;
+        if (game.stage == KitchenStage.mix) mixPhase += delta.distance / u * 8;
         if ([
           KitchenStage.mix,
           KitchenStage.knead,
@@ -530,7 +588,11 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     widget.audio.rub(false);
     if (p != null && kind != null) {
       if (game.stage == KitchenStage.ingredients && _inside(p, 1)) {
-        game.selectIngredient(kind);
+        if (game.selectIngredient(kind)) {
+          pouringIngredient = kind;
+          pouringFrom = _normal(p);
+          pourMotion.forward(from: 0);
+        }
       } else if (game.stage == KitchenStage.toppings &&
           _inside(p, 1.55) &&
           game.recipe.toppings.contains(kind)) {
@@ -590,6 +652,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
         ovenOpen = false;
         doorMotion.reverse().whenComplete(() {
           if (mounted && game.stage == KitchenStage.oven && game.actions == 1) {
+            widget.audio.ovenDoorClosed();
             game.performAction();
             _changed();
           }
@@ -599,7 +662,9 @@ class _NaturalKitchenState extends State<NaturalKitchen>
         if (ovenOpen) {
           doorMotion.forward();
         } else {
-          doorMotion.reverse();
+          doorMotion.reverse().whenComplete(() {
+            if (mounted && !ovenOpen) widget.audio.ovenDoorClosed();
+          });
         }
       }
       _changed();
@@ -660,7 +725,15 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                             toppings: widget.toppingPoints,
                             toppingKinds: widget.toppingKinds,
                             saucePoints: widget.saucePoints,
+                            readyPizzaImage: readyPizzaImage,
+                            doughIngredients: game.selectedIngredients,
+                            pourIngredient: pouringIngredient,
+                            pourProgress: pourMotion.value,
+                            pourFrom: pouringFrom,
+                            mixPhase: mixPhase,
                             cosmetic: game.activeCosmetic,
+                            ovenStyle: game.equippedFor('oven'),
+                            plantStyle: game.equippedFor('plant'),
                             toolPosition: _normal(toolPoint),
                             showTool: !game.isComplete,
                             ovenOpen: ovenOpen,
@@ -680,6 +753,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                             child: PizzaBoxScene(
                               progress: game.isComplete ? 1 : boxMotion.value,
                               recipeId: game.recipe.id,
+                              readyPizzaImage: readyPizzaImage,
                             ),
                           ),
                         if (game.stage == KitchenStage.toppings &&
@@ -713,12 +787,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                               ),
                             )!,
                             Size(u * .32, u * .32),
-                            CustomPaint(
-                              painter: FoodSprite(
-                                'pizza-${game.recipe.id}',
-                                bowl: false,
-                              ),
-                            ),
+                            _pizzaSprite(cooked: flightOut),
                           ),
                         if (!game.isComplete)
                           Positioned(
@@ -778,17 +847,21 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                             Size(potSize * 1.18, potSize * 1.18),
                             Transform.rotate(
                               angle: -.23,
-                              child: CustomPaint(
-                                painter: FoodSprite(
-                                  dragging!.startsWith('pizza') ||
-                                          dragging == 'serve'
-                                      ? 'pizza-${game.recipe.id}'
-                                      : dragging!,
-                                  bowl:
-                                      !dragging!.startsWith('pizza') &&
-                                      dragging != 'serve',
-                                ),
-                              ),
+                              child:
+                                  (dragging == 'pizza-out' ||
+                                      dragging == 'serve')
+                                  ? _pizzaSprite(cooked: true)
+                                  : CustomPaint(
+                                      painter: FoodSprite(
+                                        dragging!.startsWith('pizza') ||
+                                                dragging == 'serve'
+                                            ? 'pizza-${game.recipe.id}'
+                                            : dragging!,
+                                        bowl:
+                                            !dragging!.startsWith('pizza') &&
+                                            dragging != 'serve',
+                                      ),
+                                    ),
                             ),
                           ),
                         if (!game.isComplete)
@@ -845,7 +918,9 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                   : done
                   ? .55
                   : 1,
-              child: CustomPaint(painter: FoodSprite(item)),
+              child: CustomPaint(
+                painter: FoodSprite(item, saltStyle: game.equippedFor('salt')),
+              ),
             ),
             if (done)
               const Align(
@@ -912,7 +987,6 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     const stages = [
       KitchenStage.ingredients,
       KitchenStage.mix,
-      KitchenStage.knead,
       KitchenStage.roll,
       KitchenStage.chop,
       KitchenStage.sauce,
@@ -924,7 +998,6 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     const icons = [
       Icons.grain_rounded,
       Icons.soup_kitchen_rounded,
-      Icons.back_hand_rounded,
       Icons.horizontal_rule_rounded,
       Icons.content_cut_rounded,
       Icons.water_drop_rounded,
@@ -937,7 +1010,8 @@ class _NaturalKitchenState extends State<NaturalKitchen>
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         for (var i = 0; i < stages.length; i++)
-          if (stages[i] != KitchenStage.chop || game.recipe.id == 'calabresa')
+          if (stages[i] != KitchenStage.chop ||
+              game.recipe.toppings.contains('calabresa'))
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
               child: Icon(
@@ -1105,7 +1179,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                   color: Color(0xFFDCAC43),
                 ),
                 Text(
-                  ' +${game.result?.coins ?? 0}',
+                  ' +${formatCoins(game.result?.coins ?? 0)}',
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -1128,7 +1202,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                 onPressed: widget.onRestart,
                 icon: const Icon(Icons.replay_rounded, size: 30),
               ),
-              if (!game.freeMode && game.orderIndex < 8) ...[
+              if (!game.freeMode) ...[
                 const SizedBox(width: 12),
                 IconButton.filled(
                   tooltip: 'Próximo pedido',
@@ -1171,11 +1245,16 @@ class _GuideLine extends CustomPainter {
 
 /// Recognizable ingredients rather than written labels or emoji glyphs.
 class FoodSprite extends CustomPainter {
-  FoodSprite(this.kind, {this.bowl = true});
+  FoodSprite(this.kind, {this.bowl = true, this.saltStyle = 'salt_default'});
+  final String saltStyle;
   final String kind;
   final bool bowl;
   @override
   void paint(Canvas c, Size s) {
+    if (bowl && preparedIngredients.contains(kind)) {
+      PreparedIngredientBowl(kind).paint(c, s);
+      return;
+    }
     final m = math.min(s.width, s.height),
         o = Offset(s.width / 2, s.height / 2),
         r = m * .39;
@@ -1305,7 +1384,20 @@ class FoodSprite extends CustomPainter {
         final p = o + Offset(math.cos(i * 2.4), math.sin(i * 2.4)) * r * .58;
         if (kind.contains('chocolate')) {
           strawberry(p, r * .19, sliced: true);
-        } else if (kind.contains('calabresa')) {
+        } else if (kind.contains('frango') ||
+            (kind.contains('mista') && i.isEven)) {
+          for (var j = 0; j < 4; j++) {
+            final q = p + Offset((j % 2) * r * .10, (j ~/ 2) * r * .09);
+            c.drawLine(
+              q,
+              q + Offset(r * .18, -r * .07),
+              Paint()
+                ..color = const Color(0xFFFFDEA7)
+                ..strokeWidth = r * .07
+                ..strokeCap = StrokeCap.round,
+            );
+          }
+        } else if (kind.contains('calabresa') || kind.contains('mista')) {
           dot(p, r * .21, const Color(0xFF743C2D));
           dot(p, r * .175, const Color(0xFFBA7054));
           dot(p + Offset(r * .05, -r * .05), r * .035, const Color(0xFFF1C7A4));
@@ -1388,7 +1480,11 @@ class FoodSprite extends CustomPainter {
           width: r * 1.15,
           height: r * .4,
         ),
-        const Color(0xFF79A4B5),
+        saltStyle == 'salt_gold'
+            ? const Color(0xFFDAAF4D)
+            : saltStyle == 'salt_rose'
+            ? const Color(0xFFD092A0)
+            : const Color(0xFF79A4B5),
         r * .1,
       );
       for (var i = 0; i < 3; i++) {
@@ -1452,6 +1548,30 @@ class FoodSprite extends CustomPainter {
               math.sqrt(i / 7) *
               .7;
       switch (kind) {
+        case 'camarão':
+          paintShrimp(c, p, r * .26);
+        case 'catupiri':
+          paintCatupiri(c, p, r * .28);
+        case 'carne de sol':
+        case 'frango':
+          for (var strand = 0; strand < 6; strand++) {
+            final q =
+                p + Offset((strand % 3 - 1) * r * .14, (strand ~/ 3) * r * .13);
+            c.drawLine(
+              q,
+              q + Offset(r * .22, -r * .12),
+              Paint()
+                ..color = strand.isEven
+                    ? const Color(0xFFE6BC7C)
+                    : const Color(0xFFFFDEA7)
+                ..strokeWidth = r * .09
+                ..strokeCap = StrokeCap.round,
+            );
+          }
+        case 'muçarela':
+        case 'provolone':
+        case 'gorgonzola':
+        case 'parmesão':
         case 'queijo':
           for (var strand = 0; strand < 9; strand++) {
             final angle = strand * 2.3 + i;
@@ -1561,5 +1681,5 @@ class FoodSprite extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant FoodSprite old) =>
-      old.kind != kind || old.bowl != bowl;
+      old.kind != kind || old.bowl != bowl || old.saltStyle != saltStyle;
 }

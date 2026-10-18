@@ -9,6 +9,8 @@ class GameAudio {
   final _cut = AudioPlayer();
   final _sand = AudioPlayer();
   final _celebration = AudioPlayer();
+  final _ovenDoor = AudioPlayer();
+  final _ovenReady = AudioPlayer();
   Timer? _celebrationLimit;
   bool _hasCelebration = false;
   double musicVolume = .35;
@@ -27,6 +29,8 @@ class GameAudio {
       await _cut.setAudioContext(effectsContext);
       await _sand.setAudioContext(effectsContext);
       await _celebration.setAudioContext(effectsContext);
+      await _ovenDoor.setAudioContext(effectsContext);
+      await _ovenReady.setAudioContext(effectsContext);
       final assets = await AssetManifest.loadFromAssetBundle(rootBundle);
       _hasCelebration = assets.listAssets().contains(
         'assets/sound/celebration.wav',
@@ -54,6 +58,8 @@ class GameAudio {
       await _cut.setVolume(effects);
       await _sand.setVolume(effects * .45);
       await _celebration.setVolume(effects);
+      await _ovenDoor.setVolume(effects);
+      await _ovenReady.setVolume(effects);
     } catch (_) {
       available = false;
     }
@@ -102,9 +108,28 @@ class GameAudio {
     try {
       if (paused) {
         await _cut.stop();
+        await _ovenDoor.stop();
+        await _ovenReady.stop();
         _celebrationLimit?.cancel();
         await _celebration.stop();
       }
+    } catch (_) {
+      available = false;
+    }
+  }
+
+  Future<void> ovenDoorClosed() => _ovenEffect(
+    _ovenDoor,
+    'sound/400686__supersnd__microwave-door-close.wav',
+  );
+  Future<void> ovenReady() =>
+      _ovenEffect(_ovenReady, 'sound/815147__annabax01q__tiiin-sfx.m4a');
+
+  Future<void> _ovenEffect(AudioPlayer player, String asset) async {
+    if (_suspended) return;
+    try {
+      await player.stop();
+      await player.play(AssetSource(asset), volume: effectsVolume);
     } catch (_) {
       available = false;
     }
@@ -134,5 +159,7 @@ class GameAudio {
     _music.dispose();
     _cut.dispose();
     _sand.dispose();
+    _ovenDoor.dispose();
+    _ovenReady.dispose();
   }
 }
