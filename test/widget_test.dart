@@ -1,3 +1,6 @@
+import 'package:pizza_game/ui/wooden_shelf.dart';
+import 'package:pizza_game/ui/plant_artwork.dart';
+import 'package:pizza_game/ui/assembled_pizza.dart';
 import 'package:pizza_game/ui/recipe_intro_dialog.dart';
 
 import 'dart:convert';
@@ -137,7 +140,244 @@ void prepareUntil(GameState game, KitchenStage target) {
   }
 }
 
+Finder shopScrollable() => find.descendant(
+  of: find.byKey(const ValueKey('shop-products-all')),
+  matching: find.byType(Scrollable),
+);
+
 void main() {
+  testWidgets(
+    'older plant purchases move onto shelves and empty slots remain saved',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final game = GameState.fromJson({'coins': 100000, 'moneyVersion': 2});
+      game.buyCosmetic('plant_fern');
+      final storage = MemoryStorage()
+        ..snapshot = jsonEncode({
+          'game': game.toJson(),
+          'shelfItems': [null, null, null, null, null],
+        });
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      expect(jsonDecode(storage.snapshot!)['shelfItems'][0], 'plant_fern');
+      expect(jsonDecode(storage.snapshot!)['shelfLayoutVersion'], 2);
+      await tester.tap(find.byKey(const Key('shelf-slot-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Deixar espaço vazio'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      expect(jsonDecode(storage.snapshot!)['shelfItems'], [
+        null,
+        null,
+        null,
+        null,
+        null,
+      ]);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'two centered shelves retain plants and offer green add controls',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({});
+      final game = GameState.fromJson({'coins': 100000, 'moneyVersion': 2});
+      game.buyCosmetic('plant_fern');
+      game.buyCosmetic('plant_flowers');
+      final storage = MemoryStorage()
+        ..snapshot = jsonEncode({
+          'game': game.toJson(),
+          'shelfItems': [
+            'plant_fern',
+            'salt_default',
+            null,
+            'plant_flowers',
+            null,
+          ],
+        });
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      expect(find.byType(WoodenShelf), findsNWidgets(2));
+      expect(find.byType(PlantArtwork), findsNWidgets(2));
+      for (final element in find.byType(PlantArtwork).evaluate()) {
+        expect(
+          find.ancestor(
+            of: find.byWidget(element.widget),
+            matching: find.byKey(const Key('decoration-shelves')),
+          ),
+          findsOneWidget,
+        );
+      }
+      final shelf = tester.getRect(find.byType(WoodenShelf).first);
+      expect(shelf.left, greaterThan(390 * .15));
+      expect(shelf.right, lessThan(390 * .85));
+      final addIcons = tester.widgetList<Icon>(
+        find.byIcon(Icons.add_circle_outline_rounded),
+      );
+      expect(addIcons.length, 2);
+      expect(
+        addIcons.every((icon) => icon.color == const Color(0xFF478542)),
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
+
+  testWidgets('shop salt category sells and equips wood and metal shakers', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = MemoryStorage()
+      ..snapshot = jsonEncode({
+        'game': GameState.fromJson({'coins': 100000, 'moneyVersion': 2})
+            .toJson(),
+      });
+    await tester.pumpWidget(PizzaGameApp(storage: storage));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Loja'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('shop-filter-salt')));
+    await tester.pumpAndSettle();
+    expect(find.text('Frango'), findsNothing);
+    for (final purchase in [
+      ('Saleiro de madeira', '29,90', 'salt_wood'),
+      ('Saleiro de metal (aço)', '34,90', 'salt_steel'),
+    ]) {
+      await tester.scrollUntilVisible(
+        find.text(purchase.$1),
+        180,
+        scrollable: find.descendant(
+          of: find.byKey(const ValueKey('shop-products-salt')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await Scrollable.ensureVisible(
+        tester.element(find.text(purchase.$1)),
+        alignment: .5,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(purchase.$1));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.text('Comprar por ${purchase.$2} moedas'),
+      );
+      await tester.tap(find.text('Comprar por ${purchase.$2} moedas'));
+      await tester.pumpAndSettle();
+      final saved = GameState.fromJson(
+        jsonDecode(storage.snapshot!)['game'] as Map<String, dynamic>,
+      );
+      expect(saved.equippedFor('salt'), purchase.$3);
+      expect(saved.ownedCosmetics, contains(purchase.$3));
+    }
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets(
+    'shelf excludes cloth and ovens and keeps only purchased shelf items',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final game = GameState.fromJson({'coins': 100000, 'moneyVersion': 2});
+      for (final id in ['sage', 'oven_copper', 'plant_fern', 'spice_glass']) {
+        expect(game.buyCosmetic(id), isTrue);
+      }
+      final storage = MemoryStorage()
+        ..snapshot = jsonEncode({
+          'game': game.toJson(),
+          'shelfItems': [
+            'sage',
+            'oven_copper',
+            'plant_fern',
+            'spice_glass',
+            'salt_steel',
+          ],
+        });
+      await tester.pumpWidget(PizzaGameApp(storage: storage));
+      await tester.pumpAndSettle();
+      expect(jsonDecode(storage.snapshot!)['shelfItems'], [
+        null,
+        null,
+        'plant_fern',
+        'spice_glass',
+        null,
+      ]);
+      final shelfPreviews = tester.widgetList<ShopProductPreview>(
+        find.byType(ShopProductPreview),
+      );
+      expect(shelfPreviews.map((preview) => preview.cosmetic!.id), [
+        'plant_fern',
+        'spice_glass',
+      ]);
+      await tester.tap(find.byKey(const Key('shelf-slot-0')));
+      await tester.pumpAndSettle();
+      expect(find.text('Toalha sálvia'), findsNothing);
+      expect(find.text('Forno de cobre'), findsNothing);
+      expect(find.text('Samambaia'), findsOneWidget);
+      expect(find.text('Saleiro padrão'), findsOneWidget);
+      expect(find.text('Pote de temperos de vidro'), findsOneWidget);
+      expect(find.text('Saleiro de aço'), findsNothing);
+      await tester.tap(find.text('Saleiro padrão'));
+      await tester.pumpAndSettle();
+      expect(jsonDecode(storage.snapshot!)['shelfItems'][0], 'salt_default');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    },
+  );
+  testWidgets('shelf selection moves between slots and survives reopening', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final game = GameState.fromJson({'coins': 10000, 'moneyVersion': 2});
+    game.buyCosmetic('plant_fern');
+    final storage = MemoryStorage()
+      ..snapshot = jsonEncode({'game': game.toJson()});
+    await tester.pumpWidget(PizzaGameApp(storage: storage));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('shelf-slot-4')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('shelf-slot-0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Samambaia'));
+    await tester.pumpAndSettle();
+    final from = tester.getCenter(find.byKey(const Key('shelf-slot-0')));
+    final to = tester.getCenter(find.byKey(const Key('shelf-slot-4')));
+    final gesture = await tester.startGesture(from);
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveTo(to);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(jsonDecode(storage.snapshot!)['shelfItems'], [
+      null,
+      null,
+      null,
+      null,
+      'plant_fern',
+    ]);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(PizzaGameApp(storage: storage));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('shelf-slot-4')),
+        matching: find.byType(ShopProductPreview),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
   testWidgets('bought chicken appears in regular orders after reopening', (
     tester,
   ) async {
@@ -149,9 +389,13 @@ void main() {
       });
     await tester.pumpWidget(PizzaGameApp(storage: storage));
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Minha cozinha ·'));
+    await tester.tap(find.text('Loja'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Frango'), 200);
+    await tester.scrollUntilVisible(
+      find.text('Frango'),
+      200,
+      scrollable: shopScrollable(),
+    );
     await tester.tap(find.text('Frango'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Comprar por 79,90 moedas'));
@@ -272,9 +516,13 @@ void main() {
       });
       await tester.pumpWidget(PizzaGameApp(storage: storage));
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('Minha cozinha ·'));
+      await tester.tap(find.text('Loja'));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('Saleiro dourado'), 250);
+      await tester.scrollUntilVisible(
+        find.text('Saleiro dourado'),
+        250,
+        scrollable: shopScrollable(),
+      );
       await tester.tap(find.text('Saleiro dourado'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Comprar por 39,90 moedas'));
@@ -310,9 +558,13 @@ void main() {
         });
       await tester.pumpWidget(PizzaGameApp(storage: storage));
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('Minha cozinha ·'));
+      await tester.tap(find.text('Loja'));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('Saleiro dourado'), 300);
+      await tester.scrollUntilVisible(
+        find.text('Saleiro dourado'),
+        300,
+        scrollable: shopScrollable(),
+      );
       await tester.tap(find.text('Saleiro dourado'));
       await tester.pumpAndSettle();
       expect(find.byType(ShopPreviewDialog), findsOneWidget);
@@ -333,6 +585,7 @@ void main() {
       await tester.scrollUntilVisible(
         find.text('Carne de sol com queijo'),
         -400,
+        scrollable: shopScrollable(),
       );
       await tester.tap(find.text('Carne de sol com queijo'));
       await tester.pumpAndSettle();
@@ -556,6 +809,21 @@ void main() {
       );
       await tester.pump(const Duration(seconds: 2));
       expect(game.stage, KitchenStage.oven);
+      final trayPizza = tester
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .map((widget) => widget.painter)
+          .whereType<AssembledPizza>()
+          .single;
+      expect(trayPizza.recipeId, 'calabresa');
+      expect(
+        trayPizza.toppingKinds.where((kind) => kind == 'cebola').length,
+        greaterThanOrEqualTo(3),
+      );
+      expect(
+        trayPizza.toppingKinds.where((kind) => kind == 'calabresa').length,
+        greaterThanOrEqualTo(3),
+      );
+      expect(trayPizza.toppings.length, trayPizza.toppingKinds.length);
       await tester.pump(const Duration(milliseconds: 800));
       Offset tray() => board().width > board().height * 1.05
           ? board().topLeft + Offset(board().width * .14, board().height * .72)
@@ -709,6 +977,39 @@ void main() {
       await tester.pump();
     },
   );
+  testWidgets('automatic cutting completes only the remaining pizza cuts', (
+    tester,
+  ) async {
+    final game = GameState()..startOrder(0, freeMode: true);
+    prepareUntil(game, KitchenStage.slice);
+    await tester.pumpWidget(KitchenHarness(game, SilentAudio()));
+    await tester.pump();
+    final rect = tester.getRect(find.byKey(const Key('natural-board')));
+    await tester.tapAt(
+      rect.topLeft + Offset(rect.width * .5, rect.height * .51),
+    );
+    await tester.pump();
+    expect(game.actions, 1);
+    expect(find.text('Corte automático'), findsOneWidget);
+    final autoButton = tester.getRect(find.byKey(const Key('auto-slice')));
+    expect(rect.contains(autoButton.center), isTrue);
+    expect(autoButton.height, greaterThanOrEqualTo(48));
+    await tester.tap(find.byKey(const Key('auto-slice')));
+    await tester.pump();
+    expect(game.actions, 4);
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((w) => w.painter)
+        .whereType<KitchenPainter>()
+        .single;
+    expect(painter.pizzaCutLines, {0, 1, 2, 3});
+    await tester.pump(const Duration(seconds: 1));
+    expect(game.stage, KitchenStage.serve);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
   testWidgets(
     'recipe photo can be dismissed without starting a free-play session',
     (tester) async {

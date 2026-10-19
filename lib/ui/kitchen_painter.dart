@@ -1,9 +1,10 @@
+import 'kitchen_materials.dart';
+
 import 'dart:ui' as ui;
 
 import 'ready_pizza_photo.dart';
 import 'ingredient_details.dart';
 import 'dough_mixture.dart';
-import 'decorative_plant.dart';
 import 'prepared_ingredient_bowl.dart';
 
 import 'dart:math' as math;
@@ -31,6 +32,8 @@ class KitchenPainter extends CustomPainter {
     this.cutAnimation = 1,
     this.cutCount = -1,
     this.boardOnly = false,
+    this.paintBackground = true,
+    this.pizzaOnly = false,
     this.doughIngredients = const {},
     this.pourIngredient,
     this.pourProgress = 1,
@@ -46,7 +49,7 @@ class KitchenPainter extends CustomPainter {
   final double pourProgress, mixPhase;
   final Offset? pourFrom;
   final Offset? toolPosition;
-  final bool showTool, ovenOpen, boardOnly;
+  final bool showTool, ovenOpen, boardOnly, paintBackground, pizzaOnly;
   final int ovenActions, cutCount;
   final double cutAnimation;
   final double? ovenDoorProgress;
@@ -93,6 +96,14 @@ class KitchenPainter extends CustomPainter {
       c.translate(position.dx, position.dy);
       c.rotate(math.sin(seed * 2.3) * .55);
       c.scale(r * scale);
+      if (KitchenMaterials.paintFood(
+        c,
+        Rect.fromCenter(center: Offset.zero, width: .38, height: .38),
+        kind,
+      )) {
+        c.restore();
+        return;
+      }
       final bounds = Rect.fromLTRB(-.13, -.15, .13, .16);
       Paint fill(Color color) => Paint()..color = color;
       void ellipse(Rect rect, Color color) => c.drawOval(rect, fill(color));
@@ -176,9 +187,13 @@ class KitchenPainter extends CustomPainter {
             q,
             q + const Offset(.10, -.045),
             Paint()
-              ..color = j.isEven
-                  ? const Color(0xFFE6BC7C)
-                  : const Color(0xFFFFDEA7)
+              ..color = kind == 'carne de sol'
+                  ? (j.isEven
+                        ? const Color(0xFF854B32)
+                        : const Color(0xFFB7784B))
+                  : (j.isEven
+                        ? const Color(0xFFE6BC7C)
+                        : const Color(0xFFFFDEA7))
               ..strokeWidth = .035
               ..strokeCap = StrokeCap.round,
           );
@@ -350,62 +365,65 @@ class KitchenPainter extends CustomPainter {
       c.restore();
     }
 
-    c.drawRect(
-      Offset.zero & s,
-      Paint()
-        ..shader = const LinearGradient(
-          colors: [Color(0xFFE8BF89), Color(0xFFCF985F)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ).createShader(Offset.zero & s),
-    );
-    for (var i = 0; i < 9; i++) {
-      final y = s.height * i / 8;
-      c.drawLine(
-        Offset(0, y),
-        Offset(s.width, y),
-        Paint()
-          ..color = const Color(0x337D4F2D)
-          ..strokeWidth = 2,
-      );
-      c.drawOval(
-        Rect.fromCenter(
-          center: Offset(s.width * ((i * .27) % 1), y + 12),
-          width: 70,
-          height: 9,
-        ),
-        Paint()
-          ..color = const Color(0x127D4F2D)
-          ..style = PaintingStyle.stroke,
-      );
-    }
-    final clothColor = switch (cosmetic) {
-      'sage' => const Color(0x556C895C),
-      'rose' => const Color(0x55BB715D),
-      'sunset' => const Color(0x55DCA438),
-      _ => const Color(0x5571A4C2),
-    };
-    c.save();
-    c.translate(s.width * .08, s.height * .72);
-    c.rotate(-.12);
-    final cloth = Rect.fromLTWH(-s.width * .15, 0, s.width * .5, s.height * .5);
-    c.clipRect(cloth);
-    c.drawRect(cloth, Paint()..color = const Color(0xFFFFF2DC));
-    for (var i = -4; i < 40; i++) {
-      c.drawRect(
-        Rect.fromLTWH(i * 22, 0, 11, s.height),
-        Paint()..color = clothColor,
-      );
-      c.drawRect(
-        Rect.fromLTWH(-s.width, i * 22, s.width * 2, 11),
-        Paint()..color = clothColor,
-      );
-    }
-    c.restore();
-    if (plantStyle == 'plant_fern' || plantStyle == 'plant_flowers') {
+    if (!pizzaOnly) {
+      if (paintBackground) {
+        c.drawRect(
+          Offset.zero & s,
+          Paint()
+            ..shader = const LinearGradient(
+              colors: [Color(0xFFE8BF89), Color(0xFFCF985F)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ).createShader(Offset.zero & s),
+        );
+        for (var i = 0; i < 9; i++) {
+          final y = s.height * i / 8;
+          c.drawLine(
+            Offset(0, y),
+            Offset(s.width, y),
+            Paint()
+              ..color = const Color(0x337D4F2D)
+              ..strokeWidth = 2,
+          );
+          c.drawOval(
+            Rect.fromCenter(
+              center: Offset(s.width * ((i * .27) % 1), y + 12),
+              width: 70,
+              height: 9,
+            ),
+            Paint()
+              ..color = const Color(0x127D4F2D)
+              ..style = PaintingStyle.stroke,
+          );
+        }
+      }
+      final clothColor = switch (cosmetic) {
+        'sage' => const Color(0x556C895C),
+        'rose' => const Color(0x55BB715D),
+        'sunset' => const Color(0x55DCA438),
+        _ => const Color(0x5571A4C2),
+      };
       c.save();
-      c.translate(s.width * .80, s.height * .025);
-      DecorativePlant(plantStyle).paint(c, Size(u * .18, u * .215));
+      c.translate(s.width * .08, s.height * .72);
+      c.rotate(-.12);
+      final cloth = Rect.fromLTWH(
+        -s.width * .15,
+        0,
+        s.width * .5,
+        s.height * .5,
+      );
+      c.clipRect(cloth);
+      c.drawRect(cloth, Paint()..color = const Color(0xFFFFF2DC));
+      for (var i = -4; i < 40; i++) {
+        c.drawRect(
+          Rect.fromLTWH(i * 22, 0, 11, s.height),
+          Paint()..color = clothColor,
+        );
+        c.drawRect(
+          Rect.fromLTWH(-s.width, i * 22, s.width * 2, 11),
+          Paint()..color = clothColor,
+        );
+      }
       c.restore();
     }
     if (boardOnly) return;
@@ -413,37 +431,52 @@ class KitchenPainter extends CustomPainter {
       final oven = Rect.fromCenter(
         center: center,
         width: u * .9,
-        height: u * .78,
+        height: u * .66,
       );
-      box(
-        oven,
-        ovenStyle == 'oven_copper'
-            ? const Color(0xFFBE784F)
-            : ovenStyle == 'oven_rose'
-            ? const Color(0xFFD39A9E)
-            : const Color(0xFF9AABA0),
-        24,
-      );
-      box(oven.deflate(u * .06), const Color(0xFF483E36), 16);
+      final texturedOven = KitchenMaterials.paintOven(c, oven, ovenStyle);
+      if (!texturedOven) {
+        box(
+          oven,
+          ovenStyle == 'oven_copper'
+              ? const Color(0xFFBE784F)
+              : ovenStyle == 'oven_rose'
+              ? const Color(0xFFD39A9E)
+              : const Color(0xFF9AABA0),
+          24,
+        );
+        box(oven.deflate(u * .06), const Color(0xFF483E36), 16);
+      }
       final glow = Rect.fromCenter(
-        center: center,
-        width: u * .68,
-        height: u * .43,
+        center: center + Offset(0, u * .04),
+        width: u * .66,
+        height: u * .30,
       );
-      c.drawRRect(
-        RRect.fromRectAndRadius(glow, const Radius.circular(12)),
-        Paint()
-          ..shader = RadialGradient(
-            colors: [
-              Color.lerp(
-                const Color(0xFFE7B86D),
-                const Color(0xFFFF9B32),
-                progress,
-              )!,
-              const Color(0xFF79412C),
-            ],
-          ).createShader(glow),
-      );
+      if (!texturedOven) {
+        c.drawRRect(
+          RRect.fromRectAndRadius(glow, const Radius.circular(12)),
+          Paint()
+            ..shader = RadialGradient(
+              colors: [
+                Color.lerp(
+                  const Color(0xFFE7B86D),
+                  const Color(0xFFFF9B32),
+                  progress,
+                )!,
+                const Color(0xFF79412C),
+              ],
+            ).createShader(glow),
+        );
+      } else {
+        c.drawRRect(
+          RRect.fromRectAndRadius(glow, const Radius.circular(8)),
+          Paint()..color = Color.fromRGBO(255, 156, 51, progress * .12),
+        );
+      }
+      c.save();
+      c.clipRRect(RRect.fromRectAndRadius(glow, const Radius.circular(8)));
+      c.translate(center.dx, center.dy + u * .07);
+      c.scale(1, .55);
+      c.translate(-center.dx, -center.dy);
       if (ovenActions >= 3 && readyPizzaImage != null) {
         paintReadyPizza(
           c,
@@ -451,12 +484,24 @@ class KitchenPainter extends CustomPainter {
           Rect.fromCircle(center: center, radius: r * .64),
         );
       } else if (ovenActions > 0) {
-        dot(center, r * .64, const Color(0xFFDBA658));
-        dot(
-          center,
-          r * .53,
-          sweet ? const Color(0xFF6F3926) : const Color(0xFFC85838),
-        );
+        if (!KitchenMaterials.paintBase(
+          c,
+          Rect.fromCircle(center: center, radius: r * .64),
+          'massa',
+        )) {
+          dot(center, r * .64, const Color(0xFFDBA658));
+        }
+        if (!KitchenMaterials.paintBase(
+          c,
+          Rect.fromCircle(center: center, radius: r * .53),
+          sweet ? 'chocolate' : 'molho',
+        )) {
+          dot(
+            center,
+            r * .53,
+            sweet ? const Color(0xFF6F3926) : const Color(0xFFC85838),
+          );
+        }
         for (var i = 0; i < toppings.length; i++) {
           final point = toppings[i];
           final p =
@@ -472,6 +517,7 @@ class KitchenPainter extends CustomPainter {
           );
         }
       }
+      c.restore();
       final opening = (ovenDoorProgress ?? (ovenOpen ? 1.0 : 0.0)).clamp(
         0.0,
         1.0,
@@ -486,26 +532,52 @@ class KitchenPainter extends CustomPainter {
         RRect.fromRectAndRadius(door, const Radius.circular(12)),
         Paint()
           ..color = Color.lerp(
-            const Color(0x66647771),
-            const Color(0xFF667A70),
+            const Color(0x332A251E),
+            const Color(0x552A251E),
             opening,
           )!,
       );
       c.drawRRect(
         RRect.fromRectAndRadius(door, const Radius.circular(12)),
         Paint()
-          ..color = const Color(0xFF83988C)
+          ..shader = const LinearGradient(
+            colors: [Color(0xFFE0E3E0), Color(0xFF687277), Color(0xFFB5BDBC)],
+          ).createShader(door)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = u * .018,
+          ..strokeWidth = u * .014,
       );
-      box(
-        Rect.fromCenter(
-          center: Offset(center.dx, oven.bottom - u * .04 + u * .06 * opening),
-          width: u * .43,
-          height: u * .035,
+      c.save();
+      c.clipRRect(RRect.fromRectAndRadius(door, const Radius.circular(10)));
+      c.drawPath(
+        Path()
+          ..moveTo(door.left + door.width * .12, door.top)
+          ..lineTo(door.left + door.width * .27, door.top)
+          ..lineTo(door.left + door.width * .52, door.bottom)
+          ..lineTo(door.left + door.width * .37, door.bottom)
+          ..close(),
+        Paint()..color = Colors.white.withValues(alpha: .09 * (1 - opening)),
+      );
+      c.restore();
+      final handle = Rect.fromCenter(
+        center: Offset(center.dx, oven.bottom - u * .04 + u * .06 * opening),
+        width: u * .43,
+        height: u * .035,
+      );
+      c.drawRRect(
+        RRect.fromRectAndRadius(
+          handle.shift(const Offset(0, 2)),
+          const Radius.circular(6),
         ),
-        const Color(0xFFDDD4B9),
-        6,
+        Paint()..color = const Color(0x66372A20),
+      );
+      c.drawRRect(
+        RRect.fromRectAndRadius(handle, const Radius.circular(6)),
+        Paint()
+          ..shader = const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFF0EDE2), Color(0xFF9EA7A7), Color(0xFF5C6566)],
+          ).createShader(handle),
       );
       return;
     }
@@ -542,15 +614,17 @@ class KitchenPainter extends CustomPainter {
       }
       return;
     }
-    box(
-      Rect.fromCenter(
-        center: center + const Offset(0, 5),
-        width: r * 2.7,
-        height: r * 2.5,
-      ),
-      const Color(0xFFE8BC7E),
-      u * .07,
-    );
+    if (!pizzaOnly) {
+      box(
+        Rect.fromCenter(
+          center: center + const Offset(0, 5),
+          width: r * 2.7,
+          height: r * 2.5,
+        ),
+        const Color(0xFFE8BC7E),
+        u * .07,
+      );
+    }
     if (stage == 'chop') {
       final cuts = cutCount < 0
           ? (progress.clamp(0.0, 1.0) * 10).floor()
@@ -870,12 +944,18 @@ class KitchenPainter extends CustomPainter {
           ? r * (.68 + progress * .32)
           : r;
       dot(center + const Offset(0, 5), doughR, const Color(0x35613D26));
-      dot(center, doughR, const Color(0xFFE9BB75));
-      dot(
-        center - Offset(0, doughR * .035),
-        doughR * .92,
-        const Color(0xFFF5D99C),
-      );
+      if (!KitchenMaterials.paintBase(
+        c,
+        Rect.fromCircle(center: center, radius: doughR),
+        'massa',
+      )) {
+        dot(center, doughR, const Color(0xFFE9BB75));
+        dot(
+          center - Offset(0, doughR * .035),
+          doughR * .92,
+          const Color(0xFFF5D99C),
+        );
+      }
       if (stage == 'knead' || stage == 'roll') {
         c.drawArc(
           Rect.fromCircle(center: center, radius: doughR * .65),
@@ -910,12 +990,23 @@ class KitchenPainter extends CustomPainter {
         c.clipPath(
           Path()..addOval(Rect.fromCircle(center: center, radius: r * .82)),
         );
+        final coverage = Path();
         for (final point in saucePoints) {
-          dot(
-            center + Offset((point.dx - .5) * u, (point.dy - .51) * u),
-            u * .065,
-            sauce,
+          coverage.addOval(
+            Rect.fromCircle(
+              center:
+                  center + Offset((point.dx - .5) * u, (point.dy - .51) * u),
+              radius: u * .065,
+            ),
           );
+        }
+        c.clipPath(coverage);
+        if (!KitchenMaterials.paintBase(
+          c,
+          Rect.fromCircle(center: center, radius: r * .82),
+          sweet ? 'chocolate' : 'molho',
+        )) {
+          c.drawPath(coverage, Paint()..color = sauce);
         }
         c.restore();
         if (showTool) {
@@ -945,7 +1036,13 @@ class KitchenPainter extends CustomPainter {
           c.restore();
         }
       } else {
-        dot(center, r * .83, sauce);
+        if (!KitchenMaterials.paintBase(
+          c,
+          Rect.fromCircle(center: center, radius: r * .83),
+          sweet ? 'chocolate' : 'molho',
+        )) {
+          dot(center, r * .83, sauce);
+        }
         c.save();
         c.clipPath(
           Path()..addOval(Rect.fromCircle(center: center, radius: r * .83)),

@@ -22,6 +22,49 @@ void finishOrder(GameState game) {
 }
 
 void main() {
+  test('shelf materials must be purchased and survive restoring', () {
+    final game = GameState.fromJson({'coins': 100000, 'moneyVersion': 2});
+    for (final id in [
+      'salt_glass',
+      'salt_wood',
+      'salt_steel',
+      'spice_default',
+      'spice_glass',
+      'spice_wood',
+      'spice_steel',
+    ]) {
+      expect(game.equipCosmetic(id), isFalse);
+      final item = GameState.cosmetics.singleWhere((item) => item.id == id);
+      expect(item.canDisplayOnShelf, isTrue);
+      final before = game.coins;
+      expect(game.buyCosmetic(id), isTrue);
+      expect(game.coins, before - item.price);
+      expect(game.buyCosmetic(id), isFalse);
+      expect(GameState.fromJson(game.toJson()).ownedCosmetics, contains(id));
+    }
+    final restored = GameState.fromJson(game.toJson());
+    expect(restored.equippedFor('spice'), 'spice_steel');
+    expect(
+      GameState.cosmetics
+          .where((item) => item.category == 'cloth' || item.category == 'oven')
+          .every((item) => !item.canDisplayOnShelf),
+      isTrue,
+    );
+  });
+  test('every strawberry and onion order allows several portions', () {
+    for (final order in GameState.orders) {
+      if (order.recipe.toppings.contains('morango')) {
+        expect(order.targetFor('morango'), 8, reason: 'order ${order.index}');
+      }
+      if (order.recipe.toppings.contains('cebola')) {
+        expect(
+          order.targetFor('cebola'),
+          greaterThanOrEqualTo(5),
+          reason: 'order ${order.index}',
+        );
+      }
+    }
+  });
   test('ingredients and actions cannot be skipped or counted twice', () {
     final game = GameState();
     expect(game.advance(), isFalse);

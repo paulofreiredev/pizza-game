@@ -1,3 +1,4 @@
+import 'kitchen_materials.dart';
 import 'ingredient_details.dart';
 
 import 'dart:math' as math;
@@ -17,6 +18,10 @@ const preparedIngredients = {
   'camarão',
   'catupiri',
   'carne de sol',
+  'morango',
+  'chocolate',
+  'confeitos',
+  'manjericão',
 };
 
 /// Ready-to-use ingredients pile up independently of their cutting positions.
@@ -40,7 +45,15 @@ class PreparedIngredientBowl extends CustomPainter {
       bowl.shift(const Offset(0, .045)),
       Paint()..color = const Color(0x30634735),
     );
-    canvas.drawOval(bowl, Paint()..color = const Color(0xFFA8BDB2));
+    canvas.drawOval(
+      bowl,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFFFF8E8), Color(0xFFE2D6BF), Color(0xFF9E927D)],
+        ).createShader(bowl),
+    );
     final opening = Rect.fromCenter(
       center: const Offset(0, -.025),
       width: .82,
@@ -51,7 +64,10 @@ class PreparedIngredientBowl extends CustomPainter {
     canvas.clipPath(Path()..addOval(opening.deflate(.025)));
     canvas.drawOval(
       opening.deflate(.025),
-      Paint()..color = const Color(0xFFC6CCB2),
+      Paint()
+        ..shader = const RadialGradient(
+          colors: [Color(0xFFE3D8C3), Color(0xFFB4A68E)],
+        ).createShader(opening),
     );
     final random = math.Random(73);
     for (var i = 0; i < 65; i++) {
@@ -64,6 +80,14 @@ class PreparedIngredientBowl extends CustomPainter {
       canvas.save();
       canvas.translate(point.dx, point.dy);
       canvas.rotate(random.nextDouble() * math.pi);
+      if (KitchenMaterials.paintFood(
+        canvas,
+        Rect.fromCenter(center: Offset.zero, width: .25, height: .25),
+        kind,
+      )) {
+        canvas.restore();
+        continue;
+      }
       if (kind == 'camarão') {
         paintShrimp(canvas, Offset.zero, .095);
       } else if (kind == 'catupiri') {

@@ -1,6 +1,7 @@
+import 'ui/wooden_shelf.dart';
+
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,8 @@ import 'game/game_state.dart';
 import 'services/game_audio.dart';
 import 'services/game_storage.dart';
 import 'ui/natural_kitchen.dart';
+import 'ui/kitchen_painter.dart';
+import 'ui/kitchen_scene.dart';
 import 'ui/recipe_intro_dialog.dart';
 import 'ui/shop_product_preview.dart';
 
@@ -65,10 +68,12 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
   GameStorage? storage;
   bool buyingRecipe = false;
   String page = 'home';
+  String shopCategory = 'all';
   bool ready = false, paused = false, appActive = true;
   List<Offset> toppingPoints = [], saucePoints = [];
   List<String> toppingKinds = [];
   final Set<int> sauceCells = {}, cutLines = {};
+  final List<String?> shelfItems = List.filled(5, null);
   int ovenSeconds = 6;
   Timer? ovenTimer, saveTimer;
   Future<void> saveQueue = Future.value();
@@ -132,6 +137,33 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
         if (data['cutLines'] is List) {
           cutLines.addAll((data['cutLines'] as List).whereType<int>());
         }
+        final savedShelf = data['shelfItems'];
+        if (savedShelf is List) {
+          final seen = <String>{};
+          for (var i = 0; i < savedShelf.length && i < 5; i++) {
+            final id = savedShelf[i];
+            if (id is String &&
+                game.ownedCosmetics.contains(id) &&
+                GameState.cosmetics.any(
+                  (item) => item.id == id && item.canDisplayOnShelf,
+                ) &&
+                seen.add(id)) {
+              shelfItems[i] = id;
+            }
+          }
+        }
+        if (data['shelfLayoutVersion'] != 2) {
+          for (final item in GameState.cosmetics.where(
+            (item) =>
+                item.category == 'plant' &&
+                game.ownedCosmetics.contains(item.id),
+          )) {
+            if (shelfItems.contains(item.id)) continue;
+            final slot = shelfItems.indexOf(null);
+            if (slot < 0) break;
+            shelfItems[slot] = item.id;
+          }
+        }
         final sec = data['ovenSeconds'];
         if (sec is int) ovenSeconds = sec.clamp(0, 6);
         audio.musicEnabled = data['musicEnabled'] != false;
@@ -178,6 +210,8 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
     'sauceCells': sauceCells.toList(),
     'cutLines': cutLines.toList(),
     'ovenSeconds': ovenSeconds,
+    'shelfItems': shelfItems,
+    'shelfLayoutVersion': 2,
     'music': audio.musicVolume,
     'musicEnabled': audio.musicEnabled,
     'effects': audio.effectsVolume,
@@ -315,6 +349,19 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
                         ),
                       ],
                     ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      child: Chip(
+                        avatar: const Icon(
+                          Icons.monetization_on_rounded,
+                          color: Color(0xFFB88724),
+                        ),
+                        label: Text('${formatCoins(game.coins)} moedas'),
+                      ),
+                    ),
+                  ),
                   Expanded(
                     child: switch (page) {
                       'free' => _free(),
@@ -323,174 +370,296 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
                       _ => _home(),
                     },
                   ),
+                  if (page != 'kitchen')
+                    NavigationBar(
+                      selectedIndex: page == 'shop'
+                          ? 1
+                          : page == 'free'
+                          ? 2
+                          : 0,
+                      onDestinationSelected: (index) => setState(
+                        () => page = ['home', 'shop', 'free'][index],
+                      ),
+                      destinations: const [
+                        NavigationDestination(
+                          icon: Icon(Icons.home_outlined),
+                          selectedIcon: Icon(Icons.home),
+                          label: 'Home',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.storefront_outlined),
+                          selectedIcon: Icon(Icons.storefront),
+                          label: 'Loja',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.spa_outlined),
+                          selectedIcon: Icon(Icons.spa),
+                          label: 'Modo livre',
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
     ),
   );
   Widget _home() => LayoutBuilder(
-    builder: (context, b) {
-      final small = b.maxWidth < 650;
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.asset(
-            'assets/images/kitchen-menu.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.centerRight,
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  cream.withValues(alpha: .96),
-                  cream.withValues(alpha: small ? .85 : .05),
-                ],
-                stops: const [.05, 1],
+    builder: (context, bounds) => Stack(
+      fit: StackFit.expand,
+      children: [
+        const KitchenScene(wallFraction: .42),
+        Semantics(
+          label: 'Minha cozinha com as decorações equipadas',
+          child: ClipRect(
+            child: CustomPaint(
+              key: const Key('home-kitchen'),
+              painter: KitchenPainter(
+                stage: 'home',
+                boardOnly: true,
+                paintBackground: false,
+                progress: 0,
+                recipeId: game.recipe.id,
+                cosmetic: game.activeCosmetic,
+                ovenStyle: game.equippedFor('oven'),
+                plantStyle: 'plant_default',
+                ovenOpen: false,
+                showTool: false,
               ),
             ),
           ),
-          Align(
-            alignment: small ? Alignment.center : Alignment.centerLeft,
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(small ? 24 : 56),
-              child: SizedBox(
-                width: 390,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+        ),
+        Positioned(
+          top: 16,
+          left: 20,
+          child: Text(
+            'Minha cozinha',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+        Positioned(
+          top: 54,
+          left: 8,
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Configurações',
+                onPressed: _settings,
+                icon: const Icon(Icons.tune),
+              ),
+              IconButton(
+                tooltip: 'Créditos',
+                onPressed: _credits,
+                icon: const Icon(Icons.info_outline),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: (bounds.maxHeight * .15).clamp(100, 160),
+          left: bounds.maxWidth * .18,
+          right: bounds.maxWidth * .18,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: _decorationShelf(
+                height: (bounds.maxHeight * .085).clamp(34, 70),
+              ),
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => _start(game.nextOrderIndex),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 40),
+                  label: const Text('Jogar', style: TextStyle(fontSize: 24)),
+                ),
+                const Text('Atender um novo cliente'),
+                if (game.hasSession)
+                  TextButton.icon(
+                    onPressed: () => setState(() => page = 'kitchen'),
+                    icon: const Icon(Icons.play_circle_outline),
+                    label: const Text('Continuar preparo'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+  Future<void> _chooseShelfItem(int slot) async {
+    final purchased = GameState.cosmetics
+        .where(
+          (item) =>
+              item.canDisplayOnShelf && game.ownedCosmetics.contains(item.id),
+        )
+        .toList();
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * .6,
+          child: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Decorações da prateleira',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              if (purchased.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'Escolha plantas, saleiros e temperos comprados na Loja.',
+                  ),
+                ),
+              Expanded(
+                child: ListView(
                   children: [
-                    const Text(
-                      'UM POUCO DE FARINHA, MUITO CARINHO',
-                      style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: 2,
-                        fontWeight: FontWeight.bold,
-                        color: sage,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Pizza\nGame',
-                      style: TextStyle(
-                        fontSize: 76,
-                        height: .95,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -4,
-                        color: ink,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Sua cozinha. Seu ritmo.\nReceitas gostosas, feitas com calma.',
-                      style: TextStyle(fontSize: 18, height: 1.5),
-                    ),
-                    const SizedBox(height: 28),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () => _start(game.nextOrderIndex),
-                        icon: const Icon(Icons.play_arrow_rounded, size: 52),
-                        label: const Text(
-                          'Jogar',
-                          style: TextStyle(fontSize: 26),
+                    for (final item in purchased)
+                      ListTile(
+                        leading: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: ShopProductPreview(cosmetic: item),
                         ),
+                        title: Text(item.name),
+                        trailing: shelfItems.contains(item.id)
+                            ? const Icon(Icons.check)
+                            : null,
+                        onTap: () => Navigator.pop(context, item.id),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    if (game.hasSession)
-                      _menuButton(
-                        'Continuar preparo',
-                        Icons.play_arrow_rounded,
-                        () {
-                          setState(() => page = 'kitchen');
-                        },
-                      ),
-                    _menuButton(
-                      'Modo livre',
-                      Icons.spa_outlined,
-                      () => setState(() => page = 'free'),
-                      secondary: true,
-                    ),
-                    _menuButton(
-                      'Minha cozinha · ${formatCoins(game.coins)} moedas',
-                      Icons.chair_outlined,
-                      () => setState(() => page = 'shop'),
-                      secondary: true,
-                    ),
-                    Wrap(
-                      spacing: 4,
-                      children: [
-                        TextButton.icon(
-                          onPressed: _settings,
-                          icon: const Icon(Icons.tune, size: 18),
-                          label: const Text('Configurações'),
-                        ),
-                        TextButton(
-                          onPressed: _credits,
-                          child: const Text('Créditos'),
-                        ),
-                        if (Platform.isLinux ||
-                            Platform.isWindows ||
-                            Platform.isMacOS)
-                          TextButton(
-                            onPressed: () async {
-                              await _save();
-                              exit(0);
-                            },
-                            child: const Text('Sair'),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'FEITO PARA DESACELERAR',
-                      style: TextStyle(
-                        fontSize: 10,
-                        letterSpacing: 2,
-                        color: sage,
-                      ),
+                    ListTile(
+                      leading: const Icon(Icons.remove_circle_outline),
+                      title: const Text('Deixar espaço vazio'),
+                      onTap: () => Navigator.pop(context, ''),
                     ),
                   ],
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      );
-    },
-  );
-  Widget _menuButton(
-    String label,
-    IconData icon,
-    VoidCallback action, {
-    bool secondary = false,
-  }) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: SizedBox(
-      width: double.infinity,
-      child: secondary
-          ? OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                backgroundColor: cream.withValues(alpha: .8),
-                foregroundColor: ink,
-                padding: const EdgeInsets.all(16),
-                side: const BorderSide(color: Color(0xFFCBBBA3)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    setState(() {
+      final previous = shelfItems.indexOf(choice);
+      if (previous >= 0 && previous != slot) {
+        shelfItems[previous] = shelfItems[slot];
+      }
+      shelfItems[slot] = choice.isEmpty ? null : choice;
+    });
+    _save();
+  }
+
+  Widget _decorationShelf({double height = 62, bool editable = true}) {
+    Widget row(List<int> slots) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: slots
+              .map(
+                (slot) => _shelfSlot(slot, height: height, editable: editable),
+              )
+              .toList(),
+        ),
+        WoodenShelf(compact: !editable),
+      ],
+    );
+    return Column(
+      key: const Key('decoration-shelves'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        row([0, 1, 2]),
+        SizedBox(height: editable ? 16 : 6),
+        FractionallySizedBox(widthFactor: .82, child: row([3, 4])),
+      ],
+    );
+  }
+
+  Widget _shelfSlot(
+    int slot, {
+    required double height,
+    required bool editable,
+  }) {
+    final id = shelfItems[slot];
+    final item = GameState.cosmetics.where((item) => item.id == id).firstOrNull;
+    final tile = SizedBox(
+      height: height,
+      child: Semantics(
+        label: 'Espaço ${slot + 1}: ${item?.name ?? "vazio"}',
+        child: InkWell(
+          key: Key('shelf-slot-$slot'),
+          onTap: editable ? () => _chooseShelfItem(slot) : null,
+          borderRadius: BorderRadius.circular(12),
+          child: item == null
+              ? editable
+                    ? const Center(
+                        child: Icon(
+                          Icons.add_circle_outline_rounded,
+                          size: 22,
+                          color: Color(0xFF478542),
+                        ),
+                      )
+                    : const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.all(3),
+                  child: ShopProductPreview(cosmetic: item, transparent: true),
                 ),
-              ),
-              onPressed: action,
-              icon: Icon(icon),
-              label: Text(label),
-            )
-          : FilledButton.icon(
-              onPressed: action,
-              icon: Icon(icon),
-              label: Text(label),
-            ),
-    ),
-  );
+        ),
+      ),
+    );
+    return Expanded(
+      child: DragTarget<int>(
+        onWillAcceptWithDetails: (details) => editable && details.data != slot,
+        onAcceptWithDetails: (details) {
+          setState(() {
+            final old = shelfItems[slot];
+            shelfItems[slot] = shelfItems[details.data];
+            shelfItems[details.data] = old;
+          });
+          _save();
+        },
+        builder: (context, candidates, rejected) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: candidates.isEmpty
+                ? Colors.transparent
+                : const Color(0x227C9A67),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: item == null || !editable
+              ? tile
+              : LongPressDraggable<int>(
+                  data: slot,
+                  feedback: Material(
+                    color: Colors.transparent,
+                    child: SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: ShopProductPreview(
+                        cosmetic: item,
+                        transparent: true,
+                      ),
+                    ),
+                  ),
+                  childWhenDragging: SizedBox(height: height),
+                  child: tile,
+                ),
+        ),
+      ),
+    );
+  }
+
   Widget _header(String eyebrow, String title) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 24, 12),
     child: Row(
@@ -719,16 +888,47 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
         '${formatCoins(game.coins)} moedas para novas receitas e detalhes',
         'Minha cozinha',
       ),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            for (final category in const [
+              ('all', 'Tudo'),
+              ('recipe', 'Receitas'),
+              ('salt', 'Saleiros'),
+              ('spice', 'Temperos'),
+              ('plant', 'Plantas'),
+              ('cloth', 'Toalhas'),
+              ('oven', 'Fornos'),
+            ])
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  key: Key('shop-filter-${category.$1}'),
+                  label: Text(category.$2),
+                  selected: shopCategory == category.$1,
+                  onSelected: (_) => setState(() => shopCategory = category.$1),
+                ),
+              ),
+          ],
+        ),
+      ),
       Expanded(
         child: ListView(
+          key: ValueKey('shop-products-$shopCategory'),
           padding: const EdgeInsets.all(24),
           children: [
             const Text(
-              'Personalize sua cozinha com toalhas, saleiros, fornos e plantas. Cada categoria pode ser usada junto com as outras.',
+              'Plantas, saleiros e temperos ficam nas prateleiras. No balcão, somente a toalha como decoração.',
             ),
             const SizedBox(height: 16),
             ...PizzaRecipe.recipes
-                .where((r) => r.price > 0)
+                .where(
+                  (r) =>
+                      r.price > 0 &&
+                      (shopCategory == 'all' || shopCategory == 'recipe'),
+                )
                 .map(
                   (recipe) => Card(
                     child: ListTile(
@@ -753,75 +953,75 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
                 ),
             const SizedBox(height: 16),
             ...[
-              const Cosmetic('cream', 'Toalha azul original', 0),
-              const Cosmetic(
-                'salt_default',
-                'Saleiro azul original',
-                0,
-                category: 'salt',
-              ),
-              const Cosmetic(
-                'oven_default',
-                'Forno original',
-                0,
-                category: 'oven',
-              ),
-              const Cosmetic(
-                'plant_default',
-                'Sem plantas',
-                0,
-                category: 'plant',
-              ),
-              ...GameState.cosmetics,
-            ].map((item) {
-              return Card(
-                color: const Color(0xFFF0E4CC),
-                child: InkWell(
-                  onTap: () => _previewCosmetic(item),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 64,
-                          height: 64,
-                          child: ShopProductPreview(cosmetic: item),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(item.name),
-                              Text(
-                                game.isEquipped(item)
-                                    ? 'Em uso'
-                                    : game.ownedCosmetics.contains(item.id)
-                                    ? 'Comprado'
-                                    : '${formatCoins(item.price)} moedas',
-                              ),
-                            ],
-                          ),
-                        ),
-                        OutlinedButton(
-                          onPressed: buyingRecipe
-                              ? null
-                              : () => _previewCosmetic(item),
-                          child: const Text('Ver'),
-                        ),
-                      ],
-                    ),
+                  const Cosmetic('cream', 'Toalha azul original', 0),
+                  const Cosmetic(
+                    'oven_default',
+                    'Forno original',
+                    0,
+                    category: 'oven',
                   ),
-                ),
-              );
-            }),
+                  const Cosmetic(
+                    'plant_default',
+                    'Sem plantas',
+                    0,
+                    category: 'plant',
+                  ),
+                  ...GameState.cosmetics,
+                ]
+                .where(
+                  (item) =>
+                      shopCategory == 'all' || item.category == shopCategory,
+                )
+                .map((item) {
+                  return Card(
+                    color: const Color(0xFFF0E4CC),
+                    child: InkWell(
+                      onTap: () => _previewCosmetic(item),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 64,
+                              height: 64,
+                              child: ShopProductPreview(cosmetic: item),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(item.name),
+                                  Text(
+                                    game.isEquipped(item)
+                                        ? 'Em uso'
+                                        : game.ownedCosmetics.contains(item.id)
+                                        ? 'Comprado'
+                                        : '${formatCoins(item.price)} moedas',
+                                  ),
+                                ],
+                              ),
+                            ),
+                            OutlinedButton(
+                              onPressed: buyingRecipe
+                                  ? null
+                                  : () => _previewCosmetic(item),
+                              child: const Text('Ver'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
           ],
         ),
       ),
     ],
   );
   Widget _kitchen() => NaturalKitchen(
+    decorationShelf: _decorationShelf(height: 24, editable: false),
     game: game,
     audio: audio,
     toppingPoints: toppingPoints,

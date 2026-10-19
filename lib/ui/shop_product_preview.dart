@@ -1,4 +1,7 @@
+import 'oven_artwork.dart';
+import 'seasoning_artwork.dart';
 import 'decorative_plant.dart';
+import 'plant_artwork.dart';
 
 import 'package:flutter/material.dart';
 
@@ -9,8 +12,13 @@ import 'natural_kitchen.dart' show FoodSprite;
 
 /// Uses the kitchen's actual drawings so the preview matches equipped items.
 class ShopProductPreview extends StatelessWidget {
-  const ShopProductPreview({super.key, this.cosmetic, this.recipe})
-    : assert((cosmetic == null) != (recipe == null));
+  const ShopProductPreview({
+    super.key,
+    this.cosmetic,
+    this.recipe,
+    this.transparent = false,
+  }) : assert((cosmetic == null) != (recipe == null));
+  final bool transparent;
   final Cosmetic? cosmetic;
   final PizzaRecipe? recipe;
 
@@ -18,15 +26,25 @@ class ShopProductPreview extends StatelessWidget {
   Widget build(BuildContext context) => ClipRRect(
     borderRadius: BorderRadius.circular(16),
     child: ColoredBox(
-      color: const Color(0xFFFFF6E5),
-      child: recipe != null
+      color: transparent ? Colors.transparent : const Color(0xFFFFF6E5),
+      child: cosmetic?.category == 'plant'
+          ? PlantArtwork(cosmetic!.id)
+          : cosmetic?.category == 'salt' || cosmetic?.category == 'spice'
+          ? SeasoningArtwork(cosmetic!.id)
+          : cosmetic?.category == 'oven'
+          ? OvenArtwork(cosmetic!.id)
+          : recipe != null
           ? Image.asset(
               'assets/images/recipes/${recipe!.id}.png',
               fit: BoxFit.cover,
               semanticLabel: 'Pizza ${recipe!.name} pronta',
             )
           : CustomPaint(
-              painter: _ProductPainter(cosmetic: cosmetic, recipe: recipe),
+              painter: _ProductPainter(
+                cosmetic: cosmetic,
+                recipe: recipe,
+                transparent: transparent,
+              ),
               child: const SizedBox.expand(),
             ),
     ),
@@ -34,7 +52,8 @@ class ShopProductPreview extends StatelessWidget {
 }
 
 class _ProductPainter extends CustomPainter {
-  const _ProductPainter({this.cosmetic, this.recipe});
+  const _ProductPainter({this.cosmetic, this.recipe, this.transparent = false});
+  final bool transparent;
   final Cosmetic? cosmetic;
   final PizzaRecipe? recipe;
 
@@ -104,6 +123,7 @@ class _ProductPainter extends CustomPainter {
           : item!.category == 'oven'
           ? 'oven'
           : 'ingredients',
+      paintBackground: !transparent,
       progress: 0,
       recipeId: pizza?.id ?? 'margherita',
       cosmetic: item?.category == 'cloth' ? item!.id : 'cream',
@@ -120,7 +140,9 @@ class _ProductPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ProductPainter old) =>
-      old.cosmetic != cosmetic || old.recipe != recipe;
+      old.cosmetic != cosmetic ||
+      old.recipe != recipe ||
+      old.transparent != transparent;
 }
 
 class ShopPreviewDialog extends StatelessWidget {

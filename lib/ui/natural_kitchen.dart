@@ -1,3 +1,8 @@
+import 'salt_shaker.dart';
+import 'kitchen_materials.dart';
+import 'assembled_pizza.dart';
+import 'kitchen_scene.dart';
+
 import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
@@ -39,7 +44,9 @@ class NaturalKitchen extends StatefulWidget {
     required this.active,
     required this.ovenSeconds,
     this.animateHints = true,
+    this.decorationShelf,
   });
+  final Widget? decorationShelf;
   final GameState game;
   final GameAudio audio;
   final List<Offset> toppingPoints, saucePoints;
@@ -128,6 +135,11 @@ class _NaturalKitchenState extends State<NaturalKitchen>
         }
       : _screen(tool!);
 
+  Future<void> _loadMaterials() async {
+    await KitchenMaterials.load();
+    if (mounted) setState(() {});
+  }
+
   Future<void> _loadRecipePhoto() async {
     final id = game.recipe.id;
     requestedPhoto = id;
@@ -150,13 +162,18 @@ class _NaturalKitchenState extends State<NaturalKitchen>
   Widget _pizzaSprite({bool cooked = false}) => CustomPaint(
     painter: cooked && readyPizzaImage != null
         ? ReadyPizzaPhoto(readyPizzaImage!)
-        : FoodSprite('pizza-${game.recipe.id}', bowl: false),
+        : AssembledPizza(
+            recipeId: game.recipe.id,
+            toppings: List.of(widget.toppingPoints),
+            toppingKinds: List.of(widget.toppingKinds),
+          ),
   );
 
   @override
   void initState() {
     super.initState();
     _loadRecipePhoto();
+    _loadMaterials();
     observed = game.stage;
     ovenOpen = game.actions < 2;
     hint = AnimationController(
@@ -633,6 +650,23 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     cutMotion.forward(from: 0);
   }
 
+  void _autoSlice() {
+    if (!widget.active ||
+        transition != null ||
+        game.stage != KitchenStage.slice ||
+        game.canAdvance) {
+      return;
+    }
+    for (var line = 0; line < 4; line++) {
+      if (!widget.cutLines.add(line)) continue;
+      game.performAction();
+    }
+    cuttingTrail.clear();
+    gestureEnded = true;
+    widget.audio.cut();
+    _changed();
+  }
+
   void _tap(Offset p) {
     if (!widget.active || transition != null) return;
     if (game.stage == KitchenStage.chop && _inside(p, 1.05)) {
@@ -741,8 +775,10 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
+                        const KitchenScene(),
                         CustomPaint(
                           painter: KitchenPainter(
+                            paintBackground: false,
                             stage: game.stage.name,
                             progress: game.progress,
                             recipeId: game.recipe.id,
@@ -757,7 +793,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                             mixPhase: mixPhase,
                             cosmetic: game.activeCosmetic,
                             ovenStyle: game.equippedFor('oven'),
-                            plantStyle: game.equippedFor('plant'),
+                            plantStyle: 'plant_default',
                             toolPosition: _normal(toolPoint),
                             showTool: !game.isComplete,
                             ovenOpen: ovenOpen,
@@ -774,6 +810,20 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                             cutCount: game.actions,
                           ),
                         ),
+                        if (widget.decorationShelf != null)
+                          Positioned(
+                            top: b.maxHeight * .09,
+                            left: b.maxWidth * .18,
+                            right: b.maxWidth * .18,
+                            height: b.maxHeight * .17,
+                            child: FittedBox(
+                              fit: BoxFit.contain,
+                              child: SizedBox(
+                                width: b.maxWidth * .64,
+                                child: widget.decorationShelf!,
+                              ),
+                            ),
+                          ),
                         if (game.stage == KitchenStage.serve ||
                             game.stage == KitchenStage.complete)
                           IgnorePointer(
@@ -824,6 +874,55 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                             child: _pictureSteps(),
                           ),
                         for (var i = 0; i < pots.length; i++) _pot(i),
+                        if (game.stage == KitchenStage.slice)
+                          Positioned(
+                            right: 18,
+                            bottom: 22,
+                            child: Tooltip(
+                              message: 'Cortar pizza automaticamente',
+                              child: FilledButton.icon(
+                                key: const Key('auto-slice'),
+                                onPressed:
+                                    widget.active &&
+                                        !game.canAdvance &&
+                                        transition == null
+                                    ? _autoSlice
+                                    : null,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFFB75B42),
+                                  foregroundColor: const Color(0xFFFFF6E5),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 14,
+                                  ),
+                                ),
+                                icon: const SizedBox(
+                                  width: 34,
+                                  height: 34,
+                                  child: Stack(
+                                    children: [
+                                      Center(
+                                        child: Icon(
+                                          Icons.content_cut_rounded,
+                                          size: 28,
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 0,
+                                        right: 0,
+                                        child: Icon(
+                                          Icons.star_rounded,
+                                          size: 13,
+                                          color: Color(0xFFFFD36A),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                label: const Text('Corte automático'),
+                              ),
+                            ),
+                          ),
                         if (game.stage == KitchenStage.oven) ...[
                           if (game.actions == 0 || game.actions == 3)
                             _at(
@@ -839,12 +938,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                                   ),
                                 ),
                                 child: game.actions == 0
-                                    ? CustomPaint(
-                                        painter: FoodSprite(
-                                          'pizza-${game.recipe.id}',
-                                          bowl: false,
-                                        ),
-                                      )
+                                    ? _pizzaSprite()
                                     : const Center(
                                         child: Icon(
                                           Icons.south_rounded,
@@ -878,6 +972,8 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                                   (dragging == 'pizza-out' ||
                                       dragging == 'serve')
                                   ? _pizzaSprite(cooked: true)
+                                  : dragging!.startsWith('pizza')
+                                  ? _pizzaSprite()
                                   : CustomPaint(
                                       painter: FoodSprite(
                                         dragging!.startsWith('pizza') ||
@@ -1272,14 +1368,26 @@ class _GuideLine extends CustomPainter {
 
 /// Recognizable ingredients rather than written labels or emoji glyphs.
 class FoodSprite extends CustomPainter {
-  FoodSprite(this.kind, {this.bowl = true, this.saltStyle = 'salt_default'});
+  FoodSprite(this.kind, {this.bowl = true, this.saltStyle = 'salt_default'})
+    : materialRevision = KitchenMaterials.revision;
+  final int materialRevision;
   final String saltStyle;
   final String kind;
   final bool bowl;
   @override
   void paint(Canvas c, Size s) {
+    if (kind == 'sal') {
+      if (!KitchenMaterials.paintSalt(c, Offset.zero & s, saltStyle)) {
+        SaltShakerPainter(saltStyle).paint(c, s);
+      }
+      return;
+    }
+
     if (bowl && preparedIngredients.contains(kind)) {
       PreparedIngredientBowl(kind).paint(c, s);
+      return;
+    }
+    if (KitchenMaterials.paintFood(c, Offset.zero & s, kind, prepared: bowl)) {
       return;
     }
     final m = math.min(s.width, s.height),
@@ -1398,67 +1506,7 @@ class FoodSprite extends CustomPainter {
       );
     }
     if (kind.startsWith('pizza-')) {
-      dot(o + Offset(0, r * .06), r, const Color(0xFFB57B3C));
-      dot(o, r, const Color(0xFFE8B76D));
-      dot(
-        o,
-        r * .87,
-        kind.contains('chocolate')
-            ? const Color(0xFF673927)
-            : const Color(0xFFC65435),
-      );
-      for (var i = 0; i < 7; i++) {
-        final p = o + Offset(math.cos(i * 2.4), math.sin(i * 2.4)) * r * .58;
-        if (kind.contains('chocolate')) {
-          strawberry(p, r * .19, sliced: true);
-        } else if (kind.contains('frango') ||
-            (kind.contains('mista') && i.isEven)) {
-          for (var j = 0; j < 4; j++) {
-            final q = p + Offset((j % 2) * r * .10, (j ~/ 2) * r * .09);
-            c.drawLine(
-              q,
-              q + Offset(r * .18, -r * .07),
-              Paint()
-                ..color = const Color(0xFFFFDEA7)
-                ..strokeWidth = r * .07
-                ..strokeCap = StrokeCap.round,
-            );
-          }
-        } else if (kind.contains('calabresa') || kind.contains('mista')) {
-          dot(p, r * .21, const Color(0xFF743C2D));
-          dot(p, r * .175, const Color(0xFFBA7054));
-          dot(p + Offset(r * .05, -r * .05), r * .035, const Color(0xFFF1C7A4));
-          c.drawCircle(
-            p + Offset(r * .12, r * .1),
-            r * .19,
-            Paint()
-              ..color = const Color(0xFFC390B3)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = r * .035,
-          );
-        } else {
-          dot(p, r * .16, const Color(0xFFD66B49));
-          c.save();
-          c.translate(p.dx, p.dy);
-          c.rotate(i * 1.2);
-          c.drawOval(
-            Rect.fromCenter(
-              center: Offset.zero,
-              width: r * .42,
-              height: r * .19,
-            ),
-            Paint()..color = const Color(0xFF4F803C),
-          );
-          c.drawLine(
-            Offset(-r * .16, 0),
-            Offset(r * .16, 0),
-            Paint()
-              ..color = const Color(0xFF9BBB6B)
-              ..strokeWidth = r * .02,
-          );
-          c.restore();
-        }
-      }
+      AssembledPizza.recipe(kind.substring(6)).paint(c, s);
       return;
     }
     if (kind == 'água') {
@@ -1489,38 +1537,6 @@ class FoodSprite extends CustomPainter {
           ..color = const Color(0xFFD3F1F2)
           ..strokeWidth = r * .17,
       );
-      return;
-    }
-    if (kind == 'sal') {
-      rect(
-        Rect.fromCenter(
-          center: o + Offset(0, r * .1),
-          width: r,
-          height: r * 1.3,
-        ),
-        const Color(0xFFF7F5ED),
-        r * .15,
-      );
-      rect(
-        Rect.fromCenter(
-          center: o - Offset(0, r * .65),
-          width: r * 1.15,
-          height: r * .4,
-        ),
-        saltStyle == 'salt_gold'
-            ? const Color(0xFFDAAF4D)
-            : saltStyle == 'salt_rose'
-            ? const Color(0xFFD092A0)
-            : const Color(0xFF79A4B5),
-        r * .1,
-      );
-      for (var i = 0; i < 3; i++) {
-        dot(
-          o + Offset((i - 1) * r * .23, -r * .68),
-          r * .055,
-          const Color(0xFF3E6577),
-        );
-      }
       return;
     }
     if (kind == 'farinha') {
@@ -1708,5 +1724,8 @@ class FoodSprite extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant FoodSprite old) =>
-      old.kind != kind || old.bowl != bowl || old.saltStyle != saltStyle;
+      old.kind != kind ||
+      old.bowl != bowl ||
+      old.saltStyle != saltStyle ||
+      old.materialRevision != materialRevision;
 }

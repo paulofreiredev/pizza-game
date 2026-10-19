@@ -81,10 +81,6 @@ class PizzaOrder {
   int targetFor(String ingredient) {
     if (index == 3 && ingredient == 'manjericão') return 5;
     if (index == 4 && ingredient == 'cebola') return 5;
-    if ((index == 5 && ingredient == 'morango') ||
-        (index == 7 && ingredient == 'cebola')) {
-      return 1;
-    }
     return switch (ingredient) {
       'calabresa' => 18,
       'camarão' => 12,
@@ -102,6 +98,8 @@ class Cosmetic {
   final String category;
   final String id, name;
   final int price;
+  bool get canDisplayOnShelf =>
+      category == 'plant' || category == 'salt' || category == 'spice';
 }
 
 class OrderResult {
@@ -147,6 +145,34 @@ class GameState {
     Cosmetic('sage', 'Toalha sálvia', 6000),
     Cosmetic('rose', 'Toalha rosada', 9000),
     Cosmetic('sunset', 'Toalha dourada', 12000),
+    Cosmetic('salt_default', 'Saleiro padrão', 0, category: 'salt'),
+    Cosmetic('salt_glass', 'Saleiro de vidro', 2490, category: 'salt'),
+    Cosmetic('salt_wood', 'Saleiro de madeira', 2990, category: 'salt'),
+    Cosmetic('salt_steel', 'Saleiro de metal (aço)', 3490, category: 'salt'),
+    Cosmetic(
+      'spice_default',
+      'Pote de temperos padrão',
+      1990,
+      category: 'spice',
+    ),
+    Cosmetic(
+      'spice_glass',
+      'Pote de temperos de vidro',
+      2490,
+      category: 'spice',
+    ),
+    Cosmetic(
+      'spice_wood',
+      'Pote de temperos de madeira',
+      2990,
+      category: 'spice',
+    ),
+    Cosmetic(
+      'spice_steel',
+      'Pote de temperos de metal (aço)',
+      3490,
+      category: 'spice',
+    ),
     Cosmetic('salt_rose', 'Saleiro de cerâmica rosada', 3990, category: 'salt'),
     Cosmetic('salt_gold', 'Saleiro dourado', 3990, category: 'salt'),
     Cosmetic('oven_rose', 'Forno rosado', 29900, category: 'oven'),
@@ -497,7 +523,7 @@ class GameState {
     }
     final equipment = json['equipment'];
     if (equipment is Map) {
-      for (final category in ['salt', 'oven', 'plant']) {
+      for (final category in ['salt', 'oven', 'plant', 'spice']) {
         final id = equipment[category];
         if (id is String &&
             game._ownedCosmetics.contains(id) &&

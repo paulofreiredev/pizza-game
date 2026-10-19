@@ -1,3 +1,5 @@
+import 'package:pizza_game/ui/assembled_pizza.dart';
+
 import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
@@ -7,6 +9,34 @@ import 'package:pizza_game/ui/kitchen_painter.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'oven tray drawings keep each recipe distinct and have no scenery',
+    () async {
+      final drawings = <int>{};
+      for (final recipe in PizzaRecipe.recipes) {
+        final recorder = ui.PictureRecorder();
+        AssembledPizza.recipe(recipe.id)
+            .paint(ui.Canvas(recorder), const ui.Size(160, 160));
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(160, 160);
+        final data = (await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        ))!;
+        expect(
+          data.getUint8(3),
+          0,
+          reason: '${recipe.id} must have a transparent background',
+        );
+        expect(
+          drawings.add(Object.hashAll(data.buffer.asUint8List())),
+          isTrue,
+          reason: '${recipe.id} must have its own toppings',
+        );
+        image.dispose();
+        picture.dispose();
+      }
+    },
+  );
   test('every recipe has a decodable bundled photograph', () async {
     for (final recipe in PizzaRecipe.recipes) {
       final data = await rootBundle.load(

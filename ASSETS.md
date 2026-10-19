@@ -16,6 +16,17 @@ Os arquivos originais foram preservados. `background.wav` é uma versão PCM est
 
 ## Arte
 
+- `assets/images/kitchen-scene-v2.png`: cenário sem plantas ou enfeites embutidos, para que as decorações apareçam exclusivamente nas prateleiras. Prompt em `docs/kitchen-scene-clean-art-prompt.txt`.
+- `assets/images/pizza-bases.png`: massa crua e molhos de tomate e chocolate com textura fotográfica, usados durante o preparo e no forno. Prompt em `docs/pizza-bases-art-prompt.txt`.
+- `assets/images/ovens.png`: fornos com materiais realistas nas versões padrão, rosada e cobre, usados na loja e no jogo. Prompt em `docs/oven-art-prompt.txt`. As três artes foram geradas com a ferramenta integrada image_gen.
+
+- `assets/images/pizza-materials.png`: atlas transparente com porções realistas dos ingredientes, massa e recipientes do preparo, gerado com image_gen. Usado nos potes, na montagem e no transporte da pizza. Prompt em `docs/pizza-materials-art-prompt.txt`.
+
+- `assets/images/seasonings.png`: atlas transparente de saleiros e potes de temperos em cerâmica, vidro, madeira e aço, com materiais realistas, gerado pela ferramenta integrada image_gen. Prompt em `docs/seasoning-art-prompt.txt`.
+
+- `assets/images/kitchen-scene.png`: versão inicial do cenário, preservada como referência para `kitchen-scene-v2.png`, que é usada pela home e pelo preparo. Gerada com a ferramenta integrada image_gen.
+- `assets/images/plants.png`: atlas transparente de samambaia e flores, com folhagem e vasos mais realistas, gerado com a ferramenta integrada image_gen. Usado na loja, na prateleira e na cozinha. Prompts completos das duas artes em `docs/kitchen-scene-art-prompts.txt`.
+
 - `assets/images/recipes/frango.png`, `mista.png`, `carne_de_sol.png`, `quatro_queijos.png`, `camarao.png` e `frango_catupiri.png`: fotografias sintéticas originais geradas com a ferramenta integrada image_gen. Prompts completos em `docs/recipe-art-prompts-expanded.txt`.
 
 - `assets/images/recipes/margherita.png`, `calabresa.png` e `chocolate.png`: fotografias sintéticas originais geradas pela ferramenta integrada image_gen para o popup de apresentação de receitas. Prompts completos em `docs/recipe-art-prompts.txt`.

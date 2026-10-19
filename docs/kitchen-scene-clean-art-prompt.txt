@@ -1,0 +1,5 @@
+Tool: built-in image_gen.
+Reference: assets/images/kitchen-scene.png
+Output: assets/images/kitchen-scene-v2.png
+
+Precise-object-edit of this existing game background. Preserve EXACTLY the camera, wall/counter boundary at 40.5% image height, wood grain, warm sunlight, plaster wall, window and brick oven. REMOVE EVERY plant, potted plant, vase, flower, leaf, vine and piece of indoor foliage from this entire image, including the small pots on the stone ledge beside the oven at right and plants at the window at left and hanging branches at both top corners. Inpaint naturally with the underlying plaster, stone, window frame and sky. Outside the window may show distant countryside, but no close-up potted plants or foliage projecting into the interior. The wall must be completely bare and the wooden counter and stone ledge completely EMPTY, with NO plants, NO decorative objects, NO salt shakers, NO utensils. Keep the warm inviting rustic Italian kitchen aesthetic and the uncluttered gameplay space. The game will separately add plants ONLY on a user-controlled shelf, so absolutely no plants can be baked into this background. No shelf, no text, no UI, no watermark.
