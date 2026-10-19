@@ -1,4 +1,5 @@
 import 'salt_shaker.dart';
+import 'pizza_peel.dart';
 import 'kitchen_materials.dart';
 import 'assembled_pizza.dart';
 import 'kitchen_scene.dart';
@@ -308,6 +309,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
     flightFrom = _normal(from);
     flightTo = _normal(to);
     flightOut = out;
+    transferMotion.duration = Duration(milliseconds: out ? 1500 : 650);
     afterFlight = done;
     transferMotion.forward(from: 0);
   }
@@ -609,7 +611,7 @@ class _NaturalKitchenState extends State<NaturalKitchen>
       } else if (game.stage == KitchenStage.oven &&
           kind == 'pizza-out' &&
           (p - restPizza).distance < u * .23) {
-        _fly(p, restPizza, widget.onAdvance, out: true);
+        _fly(center, restPizza, widget.onAdvance, out: true);
       } else if (game.stage == KitchenStage.serve &&
           kind == 'serve' &&
           p.dy < boardSize.height * .22) {
@@ -797,7 +799,9 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                             toolPosition: _normal(toolPoint),
                             showTool: !game.isComplete,
                             ovenOpen: ovenOpen,
-                            ovenActions: game.actions,
+                            ovenActions: flightFrom != null && flightOut
+                                ? 0
+                                : game.actions,
                             ovenDoorProgress: doorMotion.value,
                             cuttingTrail: List.of(cuttingTrail),
                             pizzaCutLines: game.stage == KitchenStage.slice
@@ -860,11 +864,19 @@ class _NaturalKitchenState extends State<NaturalKitchen>
                               _screen(flightFrom!),
                               _screen(flightTo!),
                               Curves.easeInOutCubic.transform(
-                                transferMotion.value,
+                                flightOut
+                                    ? ((transferMotion.value - .25) / .75)
+                                          .clamp(0.0, 1.0)
+                                    : transferMotion.value,
                               ),
                             )!,
                             Size(u * .32, u * .32),
-                            _pizzaSprite(cooked: flightOut),
+                            flightOut
+                                ? PizzaPeel(
+                                    progress: transferMotion.value,
+                                    pizza: _pizzaSprite(cooked: true),
+                                  )
+                                : _pizzaSprite(),
                           ),
                         if (!game.isComplete)
                           Positioned(

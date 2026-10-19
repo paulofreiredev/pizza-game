@@ -582,9 +582,31 @@ class KitchenPainter extends CustomPainter {
       return;
     }
     if (stage == 'ingredients' || stage == 'mix') {
-      dot(center + const Offset(0, 8), r * 1.1, const Color(0x28704C32));
-      dot(center, r * 1.08, const Color(0xFFA7B8AC));
-      dot(center, r * .94, const Color(0xFF677E77));
+      final bowl = Rect.fromCircle(center: center, radius: r * 1.08);
+      c.drawOval(
+        bowl.shift(Offset(0, u * .025)),
+        Paint()
+          ..color = const Color(0x38704C32)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, u * .015),
+      );
+      c.drawOval(
+        bowl,
+        Paint()
+          ..shader = const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF0F3E9), Color(0xFFA7B8AC), Color(0xFF627C73)],
+          ).createShader(bowl),
+      );
+      c.drawCircle(center, r * .96, Paint()..color = const Color(0xFFE2E9DC));
+      c.drawCircle(
+        center,
+        r * .90,
+        Paint()
+          ..shader = const RadialGradient(
+            colors: [Color(0xFF91A294), Color(0xFF526D63)],
+          ).createShader(bowl),
+      );
       DoughMixturePainter(
         ingredients: doughIngredients,
         mixing: stage == 'mix',
@@ -598,17 +620,37 @@ class KitchenPainter extends CustomPainter {
       if (stage == 'mix' && showTool) {
         c.save();
         c.translate(tool.dx, tool.dy);
-        box(
-          Rect.fromLTWH(-u * .018, -r * 1.25, u * .036, r * 1.45),
-          const Color(0xFFBA8353),
+        c.rotate(-.32);
+        final handle = RRect.fromRectAndRadius(
+          Rect.fromLTWH(-u * .015, -r * 1.35, u * .03, r * 1.35),
+          Radius.circular(u * .015),
+        );
+        c.drawRRect(
+          handle,
+          Paint()
+            ..shader = const LinearGradient(
+              colors: [Color(0xFF82502C), Color(0xFFD5A36B), Color(0xFF976039)],
+            ).createShader(handle.outerRect),
+        );
+        final head = Rect.fromCenter(
+          center: Offset.zero,
+          width: u * .085,
+          height: u * .12,
         );
         c.drawOval(
-          Rect.fromCenter(
-            center: Offset(0, r * .14),
-            width: u * .09,
-            height: u * .13,
-          ),
-          Paint()..color = const Color(0xFFAB744A),
+          head,
+          Paint()
+            ..shader = const RadialGradient(
+              center: Alignment(-.25, -.3),
+              colors: [Color(0xFFD7A775), Color(0xFF986039)],
+            ).createShader(head),
+        );
+        c.drawOval(
+          head.deflate(u * .017),
+          Paint()
+            ..color = const Color(0x55774728)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = u * .003,
         );
         c.restore();
       }

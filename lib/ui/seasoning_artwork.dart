@@ -15,25 +15,35 @@ class SeasoningArtwork extends StatelessWidget {
         ? 3
         : 0;
     final spice = style.startsWith('spice_');
+    // Crop to the vessel itself so its base meets the shelf.
+    final crop = Rect.fromLTRB(
+      column * 384 + (spice ? 62 : 72),
+      spice ? 520 : 58,
+      column * 384 + (spice ? 337 : 331),
+      spice ? 938 : 456,
+    );
     Widget artwork = FittedBox(
       fit: BoxFit.contain,
       alignment: Alignment.bottomCenter,
       child: SizedBox(
-        width: 384,
-        height: 512,
+        width: crop.width,
+        height: crop.height,
         child: ClipRect(
           child: OverflowBox(
-            alignment: Alignment(-1 + column * 2 / 3, spice ? 1 : -1),
+            alignment: Alignment.topLeft,
             minWidth: 1536,
             maxWidth: 1536,
             minHeight: 1024,
             maxHeight: 1024,
-            child: Image.asset(
-              'assets/images/seasonings.png',
-              width: 1536,
-              height: 1024,
-              fit: BoxFit.fill,
-              excludeFromSemantics: true,
+            child: Transform.translate(
+              offset: Offset(-crop.left, -crop.top),
+              child: Image.asset(
+                'assets/images/seasonings.png',
+                width: 1536,
+                height: 1024,
+                fit: BoxFit.fill,
+                excludeFromSemantics: true,
+              ),
             ),
           ),
         ),

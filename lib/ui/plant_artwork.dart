@@ -16,10 +16,10 @@ class PlantArtwork extends StatelessWidget {
       alignment: Alignment.bottomCenter,
       child: SizedBox(
         width: fern ? 976 : 798,
-        height: 887,
+        height: 874,
         child: ClipRect(
           child: OverflowBox(
-            alignment: fern ? Alignment.centerLeft : Alignment.centerRight,
+            alignment: fern ? Alignment.topLeft : Alignment.topRight,
             minWidth: 1774,
             maxWidth: 1774,
             minHeight: 887,

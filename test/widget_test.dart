@@ -843,7 +843,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 800));
       await drag(center(), tray());
-      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump(const Duration(milliseconds: 1700));
       expect(game.stage, KitchenStage.slice);
       for (var i = 0; i < 4; i++) {
         final d =

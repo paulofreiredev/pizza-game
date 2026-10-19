@@ -613,7 +613,7 @@ class _PizzaHomeState extends State<PizzaHome> with WidgetsBindingObserver {
                       )
                     : const SizedBox.shrink()
               : Padding(
-                  padding: const EdgeInsets.all(3),
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
                   child: ShopProductPreview(cosmetic: item, transparent: true),
                 ),
         ),
